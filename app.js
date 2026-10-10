@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.14.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.15.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -230,7 +230,8 @@
       setOpen(sb, wrap.querySelector('.expand-body'), opening);
       return;
     }
-    const ab = e.target.closest('[data-toggle-adv]');
+    const row = e.target.closest('#advs-owned-list .adv');
+    const ab = e.target.closest('[data-toggle-adv]') || (row && row.querySelector('[data-toggle-adv]'));
     if (ab) {
       const body = ab.closest('.item-wrap, .adv').querySelector('.expand-body');
       setOpen(ab, body, body.hidden);
@@ -266,13 +267,14 @@
     const recorded = new Set((state.purchases || []).map((p) => p.id));
     const undated = Object.keys(state.unlocked).filter((id) => !recorded.has(id));
     const buys = (n) => {
-      const ps = (state.purchases || []).filter((p) => p.afterGame === n);
+      const ps = (state.purchases || []).map((p, i) => Object.assign({ idx: i }, p)).filter((p) => p.afterGame === n);
       const extra = n === 0 ? undated.map((id) => ({ id, cost: unlockCost(id), undated: true })) : [];
       const all = extra.concat(ps);
       if (!all.length) return '';
       const total = all.reduce((t, p) => t + p.cost, 0);
       return `<div class="buys"><div class="buys-h">${n === 0 ? 'Bought before the first game' : 'Bought after game ' + n}<span>−${total} capital</span></div>
-        ${all.map((p) => `<div class="buy-item"><span>${esc(unlockName(p.id))}${p.undated && state.games.length ? ' <small>(date not recorded)</small>' : ''}</span><b>${p.cost}</b></div>`).join('')}</div>`;
+        ${all.map((p) => `<button type="button" class="buy-item" ${p.undated ? `data-when-id="${p.id}"` : `data-when-idx="${p.idx}"`}>
+          <span>${esc(unlockName(p.id))}${p.undated && state.games.length ? ' <small>(tap to set when)</small>' : ''}</span><b>${p.cost}</b></button>`).join('')}</div>`;
     };
     list.innerHTML = buys(0) + state.games.map((g, i) => {
       const bits = [];
@@ -321,6 +323,8 @@
 
   $('#btn-add-game').addEventListener('click', () => openGame(-1));
   $('#game-list').addEventListener('click', (e) => {
+    const bi = e.target.closest('.buy-item');
+    if (bi) { openWhen(bi); return; }
     const sb = e.target.closest('[data-sum]');
     if (sb) {
       const w = sb.nextElementSibling;
@@ -362,6 +366,30 @@
     if (fromBattle) { state.battle = blankBattle(); renderBattle(); showTab('log'); }
     save(); closeGame(); renderGames(); renderStatus();
   });
+  // Set (or correct) which game an unlock was bought after.
+  const whenDlg = $('#when-dialog');
+  let whenTarget = null;
+  function openWhen(btn) {
+    const idx = btn.dataset.whenIdx;
+    const p = idx != null ? state.purchases[+idx] : { id: btn.dataset.whenId, afterGame: 0 };
+    whenTarget = { idx: idx != null ? +idx : null, id: p.id };
+    const s = SHIPS.find((x) => x.id === p.id), a = ALL_ADVS.find((x) => x.id === p.id);
+    $('#when-name').textContent = (s || a).name;
+    const sel = $('#when-select');
+    sel.innerHTML = ['<option value="0">Before the first game</option>']
+      .concat(state.games.map((g, i) => `<option value="${i + 1}">After game ${i + 1}${g.opp ? ' (vs ' + esc(g.opp) + ')' : ''}${g.date ? ' · ' + esc(g.date) : ''}</option>`)).join('');
+    sel.value = String(p.afterGame || 0);
+    whenDlg.showModal();
+  }
+  $('#when-save').addEventListener('click', () => {
+    const n = num($('#when-select').value);
+    state.purchases = state.purchases || [];
+    if (whenTarget.idx != null) state.purchases[whenTarget.idx].afterGame = n;
+    else state.purchases.push({ id: whenTarget.id, cost: unlockCost(whenTarget.id), afterGame: n, date: '' });
+    whenDlg.close(); save(); renderGames();
+  });
+  $('#when-cancel').addEventListener('click', () => whenDlg.close());
+
   // Optional: raise the campaign scale after every N games played at the current scale.
   function applyScaleRule() {
     const n = num(state.scaleRule);

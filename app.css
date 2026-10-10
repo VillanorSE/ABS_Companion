@@ -474,3 +474,9 @@ button.mod.base{color:var(--accent);}
   border-radius:var(--radius);padding:10px 12px;margin:6px 0 12px;}
 .rival-banner > div{flex:1;min-width:0;}
 .rival-banner small{display:block;color:var(--muted);font-size:12px;margin-top:2px;}
+
+/* 0.15 */
+#advs-owned-list .adv{cursor:pointer;}
+button.buy-item{width:100%;background:none;border:0;border-radius:6px;cursor:pointer;text-align:left;font-size:14px;padding:5px 4px;}
+button.buy-item:active{background:var(--surface2);}
+button.buy-item small{color:var(--accent);}

@@ -179,7 +179,7 @@
     <button class="btn primary wide" id="btn-add-game" type="button">+ Log a game</button>
     <div id="game-list"></div>
     <p class="empty" id="game-empty">No games logged yet. Each game’s Scale is added to your capital.</p>
-    <p class="hint small">Unlocks you buy are recorded after the most recent game, so this log doubles as your capital history.</p>
+    <p class="hint small">Unlocks you buy are recorded after the most recent game, so this log doubles as your capital history. Tap a purchase to change which game it came after.</p>
   </section>
 
   <!-- STATS (ship reference cards) -->
@@ -272,6 +272,14 @@
     <div id="contract-picks"></div>
     <div class="dlg-actions"><span class="spacer"></span><button class="btn primary" value="done">Done</button></div>
   </form>
+</dialog>
+
+<dialog id="when-dialog">
+  <h3>When was <span id="when-name"></span> bought?</h3>
+  <label class="field"><span>Bought</span><select id="when-select"></select></label>
+  <div class="dlg-actions"><span class="spacer"></span>
+    <button type="button" class="btn" id="when-cancel">Cancel</button>
+    <button type="button" class="btn primary" id="when-save">Save</button></div>
 </dialog>
 
 <dialog id="summary-dialog">
