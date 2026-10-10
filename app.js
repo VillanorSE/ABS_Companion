@@ -170,18 +170,25 @@
   // Unlock options you can take right now: affordable, not owned, prerequisites met.
   function renderBuyNow() {
     const avail = capital().avail;
-    const ships = SHIPS.filter((s) => !isOwned(s)).map((s) => ({ id: s.id, name: s.name, cost: s.cost, kind: 'Ship class' }));
+    const ships = SHIPS.filter((s) => !isOwned(s)).map((s) => ({ id: s.id, name: s.name, cost: s.cost, kind: 'Mass ' + s.mass }));
     const advs = ALL_ADVS.filter((a) => advEligible(a.id, state.unlocked))
       .map((a) => ({ id: a.id, name: a.name, cost: a.lvl, kind: 'L' + a.lvl + ' ' + a.tree }));
-    const all = ships.concat(advs).sort((x, y) => x.cost - y.cost);
-    const can = all.filter((o) => o.cost <= avail);
-    const later = all.filter((o) => o.cost > avail);
     const row = (o, buy) => `<div class="buy-row ${buy ? '' : 'later'}"><span class="bn">${esc(o.name)}<small>${esc(o.kind)}</small></span>
       <span class="cost">${o.cost}</span>${buy ? `<button type="button" class="btn sm" data-buy="${o.id}">Buy</button>` : ''}</div>`;
-    $('#buynow-count').textContent = '(' + can.length + ')';
-    $('#buynow-list').innerHTML = (can.length ? can.map((o) => row(o, true)).join('') : '<p class="none">Nothing affordable right now.</p>') +
-      (later.length ? `<p class="later-h">Eligible, need more capital</p>${later.map((o) => row(o, false)).join('')}` : '') +
-      '<p class="hint small">Advantages: only one Level 0, and you may research one advantage per campaign game.</p>';
+    let canCount = 0;
+    const group = (title, items, note) => {
+      items.sort((x, y) => x.cost - y.cost);
+      const can = items.filter((o) => o.cost <= avail), later = items.filter((o) => o.cost > avail);
+      canCount += can.length;
+      return `<div class="buy-group"><h4>${title}</h4>
+        ${can.length ? can.map((o) => row(o, true)).join('') : '<p class="none">Nothing affordable right now.</p>'}
+        ${later.length ? `<p class="later-h">Need more capital</p>${later.map((o) => row(o, false)).join('')}` : ''}
+        ${note ? `<p class="hint small">${note}</p>` : ''}</div>`;
+    };
+    const html = group('Ship classes', ships) +
+      group('Competitive advantages', advs, 'Only one Level 0 advantage, and you may research one advantage per campaign game.');
+    $('#buynow-count').textContent = '(' + canCount + ')';
+    $('#buynow-list').innerHTML = html;
   }
   $('#buynow-list').addEventListener('click', (e) => {
     const b = e.target.closest('[data-buy]');
@@ -305,13 +312,20 @@
   form.elements.credits.addEventListener('input', suggestRep);
 
   // ---------- ship cards ----------
-  // Value that differs from the printed stat (because of an advantage) is highlighted.
-  const modVal = (val, base, unit) => (val !== base
-    ? `<span class="mod" title="Base ${base}${unit || ''}">${val}${unit || ''}</span>` : `${val}${unit || ''}`);
+  // A stat changed by an advantage shows its difference from the printed value, e.g. 2 (+1).
+  const sgn = (d) => (d > 0 ? '+' : '−') + Math.abs(d);
+  const delta = (txt) => `<sup class="delta">(${txt})</sup>`;
+  const modVal = (val, base, unit) => `${val}${unit || ''}${val !== base ? delta(sgn(val - base)) : ''}`;
+  function rangeDelta(range, base) {
+    if (!base || range === base) return '';
+    const a = /(\d+)\D+(\d+)/.exec(range), b = /(\d+)\D+(\d+)/.exec(base);
+    const dMin = a[1] - b[1], dMax = a[2] - b[2];
+    return delta(dMin === dMax ? sgn(dMax) : dMin === 0 ? sgn(dMax) + ' max' : sgn(dMin) + '/' + sgn(dMax));
+  }
 
   function weaponRow(kind, w) {
     if (!w) return `<div class="wrow none"><span class="kind ${kind}">${kind}</span><span class="wn">None</span><span></span></div>`;
-    const range = w.baseRange && w.range !== w.baseRange ? `<span class="mod" title="Base ${esc(w.baseRange)}">${esc(w.range)}</span>` : esc(w.range);
+    const range = esc(w.range) + rangeDelta(w.range, w.baseRange);
     return `<div class="wrow">
       <span class="kind ${kind}">${kind}</span>
       <span class="wn">${esc(w.name)}${w.note ? `<small>${esc(w.note)}</small>` : ''}</span>
@@ -654,34 +668,30 @@
     }
   });
 
-  // End Phase: clear all CMD tokens and activations, then start the next round.
-  // Never blocked; if battlegroups weren't marked activated, say so and offer Undo.
-  let undoBattle = null, toastTimer = null;
+  // Next round. If battlegroups aren't marked activated, ask first (Continue / Cancel) but never forbid it.
+  const roundDlg = $('#round-dialog');
   function nextRound() {
+    const unacted = B().bgs.filter((g) => g.status === 'in' && g.count > 0 && !g.act);
+    if (!unacted.length) { startNextRound(); return; }
+    $('#round-dlg-list').textContent = unacted.map((g) => (g.name || 'BG ' + g.id) + ' (' + shipById(g.ship).name + ')').join(', ');
+    roundDlg.showModal();
+  }
+  // End Phase: clear all CMD tokens and activations, then start the next round at the top of the tab.
+  function startNextRound() {
     const b = B();
-    const unacted = b.bgs.filter((g) => g.status === 'in' && g.count > 0 && !g.act);
-    undoBattle = JSON.stringify(b);
     b.round += 1;
     b.helm = { seize: 0, jump: 0, tac: 0 };
     b.spent = { jump: 0, tac: 0 };
     b.bgs.forEach((g) => { g.act = false; g.msg = ''; });
     save(); renderBattle();
-    showToast('Round ' + b.round + ' started.' + (unacted.length
-      ? ' Not marked activated: ' + unacted.map((g) => g.name || 'BG ' + g.id).join(', ') + '.' : ''), !!unacted.length);
+    // After the dialog returns focus to the Next round button, jump back to the top of the tab.
+    if (document.activeElement) document.activeElement.blur();
+    setTimeout(() => window.scrollTo(0, 0), 0);
+    const tile = $('#b-round').closest('.tile');
+    tile.classList.remove('flash'); void tile.offsetWidth; tile.classList.add('flash');
   }
-  function showToast(msg, warn) {
-    const t = $('#toast');
-    $('#toast-msg').textContent = msg;
-    t.classList.toggle('warn', warn);
-    t.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.hidden = true; undoBattle = null; }, warn ? 9000 : 4000);
-  }
-  $('#toast-undo').addEventListener('click', () => {
-    if (undoBattle) { state.battle = JSON.parse(undoBattle); save(); renderBattle(); }
-    undoBattle = null;
-    $('#toast').hidden = true;
-  });
+  $('#round-continue').addEventListener('click', () => { roundDlg.close(); startNextRound(); });
+  $('#round-cancel').addEventListener('click', () => roundDlg.close());
   $('#btn-next-round').addEventListener('click', nextRound);
 
   $('#b-earn-form').addEventListener('submit', (e) => {

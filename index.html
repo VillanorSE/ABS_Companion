@@ -236,7 +236,15 @@
   </form>
 </dialog>
 
-<div class="toast" id="toast" role="status" hidden><span id="toast-msg"></span><button type="button" id="toast-undo">Undo</button></div>
+<dialog id="round-dialog">
+  <h3>Start the next round?</h3>
+  <p>These battlegroups haven’t been marked as activated this round:</p>
+  <p class="round-list" id="round-dlg-list"></p>
+  <div class="dlg-actions"><span class="spacer"></span>
+    <button type="button" class="btn" id="round-cancel">Cancel</button>
+    <button type="button" class="btn primary" id="round-continue">Continue</button>
+  </div>
+</dialog>
 
 <script src="data.js"></script>
 <script src="rules.js"></script>
