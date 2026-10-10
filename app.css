@@ -401,3 +401,4 @@ button.mod.base{color:var(--accent);}
 .round-list{font-weight:700;color:var(--accent);}
 .tile.flash{animation:flash 1.2s ease-out;}
 @keyframes flash{0%{background:var(--accent);}100%{background:var(--surface);}}
+.version-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 2px 8px;color:var(--muted);font-size:14px;}

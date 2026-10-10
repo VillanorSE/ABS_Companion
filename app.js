@@ -1,6 +1,7 @@
 (function () {
   'use strict';
 
+  const APP_VERSION = 10;   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -890,7 +891,29 @@
   renderAll();
   showTab($('[data-view="' + prefs.tab + '"]') ? prefs.tab : 'overview');
 
+  // ---------- updates ----------
+  // Check for a new version on launch and whenever the app returns to the foreground;
+  // when a new service worker takes over, reload once so the new files are used.
+  $('#app-version').textContent = 'Version ' + APP_VERSION;
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // Skip the very first install (nothing was controlling the page yet); reload on real updates.
+    let controlled = !!navigator.serviceWorker.controller;
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!controlled) { controlled = true; return; }
+      if (reloading) return;
+      reloading = true;
+      location.reload();
+    });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+      const check = () => reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+      $('#btn-update').addEventListener('click', () => {
+        $('#app-version').textContent = 'Checking…';
+        reg.update().then(() => {
+          if (!reg.installing && !reg.waiting) location.reload();   // nothing new: just refresh
+        }).catch(() => { $('#app-version').textContent = 'Version ' + APP_VERSION + ' (offline)'; });
+      });
+    }).catch(() => {});
   }
 })();

@@ -21,4 +21,4 @@ Rules text in `rules.js` is paraphrased from the rulebook, with FAQ v1.2 and War
 
 `ABS_Campaign_Tracker.html` is the printable tracker. A filled-in "Save a copy" file from it can be imported into the app.
 
-When you change app files, bump `VERSION` in `sw.js` so installed copies update.
+When you change app files, bump `VERSION` in `sw.js` and `APP_VERSION` in `app.js` so installed copies update.
