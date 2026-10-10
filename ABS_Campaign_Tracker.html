@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>A Billion Suns - Campaign Tracker</title>
+<style>
+:root{
+  --navy:#1b2a4a;
+  --cat:#2d4373;
+  --line:#888888;
+  --lineLight:#dddddd;
+  --grey:#666666;
+  --locked:#eef1f6;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:#5a6472;font-family:Helvetica,Arial,sans-serif;line-height:1.2;}
+.toolbar{
+  position:sticky;top:0;z-index:50;
+  background:#12203b;color:#fff;padding:8pt 14pt;
+  display:flex;gap:10pt;align-items:center;flex-wrap:wrap;
+  font-size:9pt;box-shadow:0 2pt 6pt rgba(0,0,0,.35);
+}
+.toolbar b{font-size:10.5pt;margin-right:6pt;}
+.toolbar button{
+  background:#2d4373;color:#fff;border:1px solid #4a63a0;border-radius:4pt;
+  padding:6pt 11pt;font-size:9pt;cursor:pointer;font-family:inherit;
+}
+.toolbar button:hover{background:#3a548f;}
+.toolbar .hint{opacity:.75;font-size:8pt;}
+.toolbar .savemsg{color:#8fe3a3;font-size:8pt;min-width:120pt;}
+
+.page{
+  width:612pt;min-height:792pt;margin:16pt auto;background:#fff;
+  padding:30pt;position:relative;box-shadow:0 3pt 14pt rgba(0,0,0,.4);
+}
+.titleband{background:var(--navy);color:#fff;padding:6pt 10pt;margin:-30pt -30pt 7pt -30pt;}
+.titleband h1{margin:0 0 2pt 0;font-size:15pt;letter-spacing:.3px;}
+.titleband .sub{font-size:8.5pt;font-weight:400;}
+
+/* corp/ceo/date row */
+.toprow{display:flex;gap:14pt;margin-bottom:7pt;}
+.tf{flex:1;}
+.tf.wide{flex:2.2;}
+.tf.narrow{flex:1.1;}
+.tf .lab{font-size:7.5pt;font-weight:700;margin-bottom:3pt;}
+.tf input[type=text]{width:100%;border:none;border-bottom:1px solid var(--line);
+  font-size:11pt;padding:3pt 2pt;font-family:inherit;background:transparent;}
+.tf input[type=text]:focus{outline:2px solid #6f8fd8;outline-offset:1pt;}
+
+/* generic panel + header bar */
+.panel{border:1px solid var(--line);margin-bottom:3pt;}
+.panel .bar{background:var(--navy);color:#fff;font-weight:700;font-size:7.2pt;
+  padding:2pt 6pt;display:flex;justify-content:space-between;letter-spacing:.2px;}
+.panel .bar .rt{font-weight:700;}
+
+/* campaign status strip */
+.statrow{display:flex;}
+.statfield{flex:1;text-align:center;padding:4pt 4pt 3pt;border-right:1px solid var(--line);}
+.statfield:last-child{border-right:none;}
+.statfield .lab{font-size:6.2pt;font-weight:700;line-height:1.25;margin-bottom:2pt;}
+.statfield input[type=text]{width:88%;text-align:center;border:none;border-bottom:1px solid var(--line);
+  font-size:12pt;padding:1pt 0;font-family:inherit;background:transparent;}
+.statfield.big input[type=text]{font-size:12pt;}
+.statfield input[type=text]:focus{outline:2px solid #6f8fd8;outline-offset:1pt;}
+
+/* auto-calculated field */
+.statfield.calc input[type=text]{border-bottom:1px dashed var(--line);color:var(--navy);font-weight:700;cursor:default;}
+.statfield.calc input[type=text]:focus{outline:none;}
+.statfield.calc input.negative{color:#b3261e;}
+.calcnote{font-size:5.2pt;color:var(--grey);font-style:italic;margin-top:1pt;line-height:1;}
+
+/* two-column layout (float-based so print can paginate inside it) */
+.cols{display:block;}
+.cols:after{content:"";display:table;clear:both;}
+.col{float:left;width:calc(50% - 5pt);}
+.col + .col{margin-left:10pt;}
+
+/* ship checklist rows */
+.ship-row{display:flex;align-items:center;padding:2pt 4pt;font-size:7.4pt;line-height:1.1;
+  border-bottom:1px solid var(--lineLight);}
+.ship-row:last-child{border-bottom:none;}
+.ship-row.locked{background:var(--locked);}
+.ship-row input[type=checkbox]{margin:0 7pt 0 0;width:8.5pt;height:8.5pt;flex:none;}
+.ship-row .name{flex:1;}
+.ship-row .cost{font-style:italic;font-size:7.1pt;min-width:22pt;text-align:right;}
+.footnote{font-size:5.8pt;color:var(--grey);line-height:1.15;margin:2pt 0 4pt 2pt;}
+
+/* competitive-advantage rows */
+.adv-row{padding:1.5pt 5pt;border-bottom:1px solid var(--lineLight);}
+.adv-row:last-child{border-bottom:none;}
+.adv-row .top{display:flex;align-items:baseline;line-height:1.05;}
+.adv-row .top input[type=checkbox]{margin:0 7pt 0 0;width:8.5pt;height:8.5pt;flex:none;align-self:center;}
+.adv-row .name{font-weight:700;font-size:6.9pt;flex:1;}
+.adv-row .lvl{font-style:italic;font-size:6.5pt;color:var(--grey);min-width:16pt;text-align:right;}
+.adv-row .desc{font-size:6.0pt;color:#333;margin:0.8pt 0 0 15.5pt;line-height:1.1;}
+
+/* per-game log table */
+table.log{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:9pt;}
+table.log th{background:var(--navy);color:#fff;font-size:6.6pt;font-weight:700;
+  padding:4pt 2pt;line-height:1.25;}
+table.log td{border:1px solid var(--line);padding:0;height:32pt;vertical-align:top;}
+table.log td.cbcell{text-align:center;vertical-align:middle;}
+table.log td.cbcell input[type=checkbox]{width:10pt;height:10pt;margin:0;}
+table.log td.gamenum{text-align:center;vertical-align:middle;color:var(--grey);
+  font-weight:700;font-size:9.5pt;}
+table.log input[type=text]{width:100%;height:100%;border:none;font-size:7.2pt;
+  padding:3pt;font-family:inherit;background:transparent;}
+table.log textarea{width:100%;height:100%;border:none;font-size:7.2pt;resize:none;
+  padding:3pt;font-family:inherit;background:transparent;}
+table.log input[type=text]:focus, table.log textarea:focus{outline:1.5px solid #6f8fd8;outline-offset:-1px;}
+
+/* notes page */
+.notespanel{height:calc(792pt - 60pt - 46pt);display:flex;flex-direction:column;}
+.notesbox{flex:1;width:100%;border:none;resize:none;font-size:9pt;padding:8pt;
+  font-family:inherit;background:transparent;}
+.notesbox:focus{outline:none;}
+
+/* screen-only helper */
+.pagegap{height:0;}
+
+@media print{
+  html,body{background:#fff;}
+  .toolbar{display:none;}
+  .page{box-shadow:none;margin:0 auto;width:612pt;height:791pt;min-height:0;overflow:hidden;page-break-after:always;}
+  .page:last-child{page-break-after:auto;}
+  @page{size:letter;margin:0;}
+  .tf input[type=text], .statfield input[type=text], table.log input[type=text],
+  table.log textarea, .notesbox{outline:none !important;}
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar no-print">
+  <b>A Billion Suns &mdash; Campaign Tracker</b>
+  <button onclick="saveCopy()">💾 Save a copy (.html)</button>
+  <button onclick="printTracker()">🖨 Print</button>
+  <button onclick="resetForm()">↺ Reset all fields</button>
+  <span class="hint">Fill it in, then click &ldquo;Save a copy&rdquo; to download an HTML file with your entries baked in &mdash; reopen it any time to keep going, or print it (page 3 is optional).</span>
+  <span class="savemsg" id="savemsg"></span>
+</div>
+
+<section class="page" id="page1">
+  <div class="titleband">
+    <h1>A BILLION SUNS</h1>
+    <div class="sub">CAMPAIGN TRACKER &mdash; page 1 of 3 (front)</div>
+  </div>
+
+  <div class="toprow">
+    <div class="tf wide">
+      <div class="lab">CORPORATION NAME</div>
+      <input type="text" id="corp_name">
+    </div>
+    <div class="tf">
+      <div class="lab">CEO / PLAYER</div>
+      <input type="text" id="ceo_name">
+    </div>
+    <div class="tf narrow">
+      <div class="lab">CAMPAIGN START DATE</div>
+      <input type="text" id="start_date">
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="bar"><span>CAMPAIGN STATUS</span></div>
+    <div class="statrow">
+      
+      <div class="statfield big calc">
+        <div class="lab">TOTAL CAPITAL EARNED<br>(lifetime, cumulative)</div>
+        <input type="text" id="total_capital" value="10" readonly tabindex="-1" title="Auto: 10 + sum of Scales in game log">
+        <div class="calcnote">Auto: 10 + sum of Scales in game log</div>
+      </div>
+      
+      <div class="statfield big calc">
+        <div class="lab">CAPITAL CURRENTLY<br>AVAILABLE TO SPEND</div>
+        <input type="text" id="avail_capital" value="10" readonly tabindex="-1" title="Auto: Total earned − checked costs">
+        <div class="calcnote">Auto: Total earned − checked costs</div>
+      </div>
+      
+      <div class="statfield big">
+        <div class="lab">CURRENT CAMPAIGN<br>SCALE (max 10)</div>
+        <input type="text" id="camp_scale">
+      </div>
+      
+      <div class="statfield big">
+        <div class="lab">TOTAL REPUTATION</div>
+        <input type="text" id="total_rep">
+      </div>
+      
+      <div class="statfield big">
+        <div class="lab">GAMES PLAYED</div>
+        <input type="text" id="games_played">
+      </div>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="col">
+      
+  <div class="panel">
+    <div class="bar"><span>SHIP CLASSES UNLOCKED</span><span class="rt">COST</span></div>
+    <div class="rows">
+      <div class="ship-row">
+        <input type="checkbox" id="ship_1" class="buy" data-cost="1">
+        <span class="name">Recon Wing</span>
+        <span class="cost">1</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_2" class="buy" data-cost="2">
+        <span class="name">Fighter Wing</span>
+        <span class="cost">2</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_3" class="buy" data-cost="3">
+        <span class="name">Bomber Wing</span>
+        <span class="cost">3</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_4" class="buy" data-cost="5">
+        <span class="name">Stealth Bomber Wing (WZ)</span>
+        <span class="cost">5</span>
+      </div>
+      <div class="ship-row locked">
+        <input type="checkbox" checked disabled title="Always available">
+        <span class="name">Light Utility Ship</span>
+        <span class="cost">–</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_6" class="buy" data-cost="3">
+        <span class="name">Gunship</span>
+        <span class="cost">3</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_7" class="buy" data-cost="2">
+        <span class="name">Medium Utility Ship</span>
+        <span class="cost">2</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_8" class="buy" data-cost="5">
+        <span class="name">Corvette</span>
+        <span class="cost">5</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_9" class="buy" data-cost="5">
+        <span class="name">Light Carrier (WZ)</span>
+        <span class="cost">5</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_10" class="buy" data-cost="5">
+        <span class="name">Defense Platform (WZ)</span>
+        <span class="cost">5</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_11" class="buy" data-cost="7">
+        <span class="name">Frigate</span>
+        <span class="cost">7</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_12" class="buy" data-cost="10">
+        <span class="name">Assault Carrier (WZ)</span>
+        <span class="cost">10</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_13" class="buy" data-cost="10">
+        <span class="name">Monitor</span>
+        <span class="cost">10</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_14" class="buy" data-cost="12">
+        <span class="name">Destroyer</span>
+        <span class="cost">12</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_15" class="buy" data-cost="15">
+        <span class="name">Carrier</span>
+        <span class="cost">15</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_16" class="buy" data-cost="25">
+        <span class="name">Battle Carrier (WZ)</span>
+        <span class="cost">25</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_17" class="buy" data-cost="30">
+        <span class="name">Cruiser</span>
+        <span class="cost">30</span>
+      </div>
+      <div class="ship-row">
+        <input type="checkbox" id="ship_18" class="buy" data-cost="40">
+        <span class="name">Battleship</span>
+        <span class="cost">40</span>
+      </div>
+    </div>
+  </div>
+  <p class="footnote">Light Utility Ship is available to every corporation from the start of the campaign at no cost.</p>
+      
+  <div class="panel">
+    <div class="bar"><span>AGGRESSION — COMPETITIVE ADVANTAGES</span><span class="rt">LVL</span></div>
+    <div class="rows">
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_19" class="buy" data-cost="0">
+          <span class="name">Unstable Engine Shielding</span>
+          <span class="lvl">L0</span>
+        </div>
+        <div class="desc">Ships count Mass +1 when exploding / checking for explosions.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_20" class="buy" data-cost="1">
+          <span class="name">Overload</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">A dud that triggers a Crit. Weapon Malfunction also counts as a hit.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_21" class="buy" data-cost="1">
+          <span class="name">Reckless Disregard</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">One battlegroup may Go Rogue repeatedly (up to its Silhouette) per round.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_22" class="buy" data-cost="1">
+          <span class="name">Over-Specced Weapon Arrays</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">Battlegroup counts Mass +1 for Power to Weapons purposes.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_23" class="buy" data-cost="1">
+          <span class="name">Shock And Awe</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">Suffer 1 dmg to upgrade your Jump Shock to D8 / dmg 2 (not jump-hops).</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_24" class="buy" data-cost="2">
+          <span class="name">Close And Personal</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">Primary weapon min/max range reduced by 2″.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_25" class="buy" data-cost="3">
+          <span class="name">Advanced Targeting Systems</span>
+          <span class="lvl">L3</span>
+        </div>
+        <div class="desc">Re-roll missed auxiliary attacks during your own activation.</div>
+      </div>
+    </div>
+  </div>
+      
+  <div class="panel">
+    <div class="bar"><span>DISCIPLINE — COMPETITIVE ADVANTAGES</span><span class="rt">LVL</span></div>
+    <div class="rows">
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_26" class="buy" data-cost="0">
+          <span class="name">Well-drilled</span>
+          <span class="lvl">L0</span>
+        </div>
+        <div class="desc">Red Alert discards D3+1 damage tokens instead of D3.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_27" class="buy" data-cost="1">
+          <span class="name">Iron Will</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">Executive Override re-rolls two dice instead of one.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_28" class="buy" data-cost="2">
+          <span class="name">Scenario Planning</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">Subtract 1 from roll-off results (minimum 1).</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_29" class="buy" data-cost="2">
+          <span class="name">Chain of Command</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">A successful Exec. Override re-roll refunds a CMD token to Tactical.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_30" class="buy" data-cost="2">
+          <span class="name">Exceptional Officers</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">Battlegroup counts Mass +1 for spending CMD tokens.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_31" class="buy" data-cost="3">
+          <span class="name">Inspirational Leader</span>
+          <span class="lvl">L3</span>
+        </div>
+        <div class="desc">Once/game: remove 1 damage from every friendly battlegroup (End Phase).</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_32" class="buy" data-cost="3">
+          <span class="name">Tactical Savant</span>
+          <span class="lvl">L3</span>
+        </div>
+        <div class="desc">Start each round with one extra CMD token (Scale + 4).</div>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="col">
+      
+  <div class="panel">
+    <div class="bar"><span>ENDURANCE — COMPETITIVE ADVANTAGES</span><span class="rt">LVL</span></div>
+    <div class="rows">
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_33" class="buy" data-cost="0">
+          <span class="name">Heavy Frames</span>
+          <span class="lvl">L0</span>
+        </div>
+        <div class="desc">+1 Silhouette to all battlegroups in this fleet.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_34" class="buy" data-cost="1">
+          <span class="name">Divert Weapons To Shields</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">Discard passive-attack hits scored to gain +1 Shields next attack.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_35" class="buy" data-cost="1">
+          <span class="name">Highly Reactive Shield Cap.</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">Battlegroup counts Mass +1 for Power to Shields purposes.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_36" class="buy" data-cost="1">
+          <span class="name">Improved Point Defenses</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">Mother&#x27;s Wing protective radius doubled to 2×Mass.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_37" class="buy" data-cost="2">
+          <span class="name">Stand Firm</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">Re-roll misses vs. a battlegroup that has you as its Engage Target.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_38" class="buy" data-cost="2">
+          <span class="name">Heavily Shielded Utes</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">Utility ship battlegroups gain +1 Shields.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_39" class="buy" data-cost="3">
+          <span class="name">Advanced Shield Generators</span>
+          <span class="lvl">L3</span>
+        </div>
+        <div class="desc">All battlegroups with Shields 1+ gain a further +1 Shields.</div>
+      </div>
+    </div>
+  </div>
+      
+  <div class="panel">
+    <div class="bar"><span>HELMSMANSHIP — COMPETITIVE ADVANTAGES</span><span class="rt">LVL</span></div>
+    <div class="rows">
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_40" class="buy" data-cost="0">
+          <span class="name">Light Frames</span>
+          <span class="lvl">L0</span>
+        </div>
+        <div class="desc">-1 Silhouette (min 1) and +1 Thrust to all battlegroups.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_41" class="buy" data-cost="1">
+          <span class="name">Advanced Nav. Computers</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">Battlegroup counts Mass as 0 when calculating Jump Range.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_42" class="buy" data-cost="1">
+          <span class="name">Advanced Retro Arrays</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">Suffer 1 dmg to pivot up to 90° after an enemy&#x27;s movement step.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_43" class="buy" data-cost="2">
+          <span class="name">Advanced Inertial Dampeners</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">1 CMD token grants both Power to Engines + Inertial Dampeners.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_44" class="buy" data-cost="2">
+          <span class="name">Instinctual Captain</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">May pivot either before or after moving ahead each move action.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_45" class="buy" data-cost="3">
+          <span class="name">Rapid Targeting Systems</span>
+          <span class="lvl">L3</span>
+        </div>
+        <div class="desc">May resolve the Active Attacks Step before the Movement Step.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_46" class="buy" data-cost="3">
+          <span class="name">Superior Thruster Arrays</span>
+          <span class="lvl">L3</span>
+        </div>
+        <div class="desc">+2″ Thrust to all battlegroups in this fleet.</div>
+      </div>
+    </div>
+  </div>
+      
+  <div class="panel">
+    <div class="bar"><span>LOGISTICS — COMPETITIVE ADVANTAGES</span><span class="rt">LVL</span></div>
+    <div class="rows">
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_47" class="buy" data-cost="0">
+          <span class="name">Industrial Might</span>
+          <span class="lvl">L0</span>
+        </div>
+        <div class="desc">First Light Utility Ship doesn&#x27;t count vs. the utility ship limit.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_48" class="buy" data-cost="1">
+          <span class="name">System Optimisation</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">Revealing a card returns one spent CMD token to Tactical.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_49" class="buy" data-cost="2">
+          <span class="name">Advanced Material Scanners</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">Utility ships gain +2″ scan range.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_50" class="buy" data-cost="2">
+          <span class="name">Asset Insurance</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">Battlegroups carrying contract tokens gain +1 Shields per card in hand.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_51" class="buy" data-cost="3">
+          <span class="name">Electromagnetic Pulse Emit.</span>
+          <span class="lvl">L3</span>
+        </div>
+        <div class="desc">Enemy ships that scan near your utility ships take 1 damage.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_52" class="buy" data-cost="3">
+          <span class="name">Astro-Beacon Net</span>
+          <span class="lvl">L3</span>
+        </div>
+        <div class="desc">First jump point deployed each round refunds a CMD token to Jump In.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_53" class="buy" data-cost="4">
+          <span class="name">Multi-pass Scanners</span>
+          <span class="lvl">L4</span>
+        </div>
+        <div class="desc">Once/game: reveal two cards when required to reveal one; keep either.</div>
+      </div>
+    </div>
+  </div>
+      
+  <div class="panel">
+    <div class="bar"><span>MILITARY — COMPETITIVE ADVANTAGES</span><span class="rt">LVL</span></div>
+    <div class="rows">
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_54" class="buy" data-cost="0">
+          <span class="name">Improved Ordinance</span>
+          <span class="lvl">L0</span>
+        </div>
+        <div class="desc">D10 and D12 attack dice deal +1 damage on a hit.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_55" class="buy" data-cost="1">
+          <span class="name">Longer Range Munitions</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">Primary weapon systems&#x27; maximum range +4″.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_56" class="buy" data-cost="1">
+          <span class="name">Remote Target Patterning</span>
+          <span class="lvl">L1</span>
+        </div>
+        <div class="desc">All weapon systems&#x27; min. and max. range +2″.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_57" class="buy" data-cost="2">
+          <span class="name">Crossfire</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">-1 to attack rolls vs. a target hit by both primary &amp; auxiliary weapons.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_58" class="buy" data-cost="2">
+          <span class="name">Advanced Auto-Pintles</span>
+          <span class="lvl">L2</span>
+        </div>
+        <div class="desc">Discard a CMD token to make one battlegroup&#x27;s aux. arc 360° this turn.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_59" class="buy" data-cost="3">
+          <span class="name">Well-oiled Machine</span>
+          <span class="lvl">L3</span>
+        </div>
+        <div class="desc">Combined Orders range becomes Mass+6″ instead of Mass+3″.</div>
+      </div>
+      <div class="adv-row">
+        <div class="top">
+          <input type="checkbox" id="adv_60" class="buy" data-cost="3">
+          <span class="name">Advanced Blaster Technology</span>
+          <span class="lvl">L3</span>
+        </div>
+        <div class="desc">Auxiliary weapon systems&#x27; maximum range +1″.</div>
+      </div>
+    </div>
+  </div>
+    </div>
+  </div>
+</section>
+
+<section class="page" id="page2">
+  <div class="titleband">
+    <h1>A BILLION SUNS</h1>
+    <div class="sub">CAMPAIGN TRACKER &mdash; page 2 of 3 (back) &middot; Per-Game Log</div>
+  </div>
+
+  
+  <table class="log">
+    <colgroup><col style="width:5%"><col style="width:6%"><col style="width:13%"><col style="width:5%"><col style="width:9%"><col style="width:7%"><col style="width:6%"><col style="width:24%"><col style="width:9%"><col style="width:16%"></colgroup>
+    <thead><tr><th>GAME&nbsp;#</th><th>SCALE</th><th>OPPONENT(S)</th><th>WIN?</th><th>FINAL<br>CREDITS</th><th>REP.<br>GAINED</th><th>BOUGHT<br>REP?<br>(&minus;10)</th><th>SHIP CLASSES /<br>ADVANTAGES PURCHASED</th><th>DATE</th><th>NOTES</th></tr></thead>
+    <tbody>
+      <tr><td class="gamenum">1</td><td><input type="text" id="log_61" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_62"></td><td><input type="text" id="log_63"></td><td><input type="text" id="log_64"></td><td><input type="text" id="log_65"></td><td class="cbcell"><input type="checkbox" id="log_66" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_67"></textarea></td><td><input type="text" id="log_68"></td><td><textarea id="log_69"></textarea></td></tr><tr><td class="gamenum">2</td><td><input type="text" id="log_70" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_71"></td><td><input type="text" id="log_72"></td><td><input type="text" id="log_73"></td><td><input type="text" id="log_74"></td><td class="cbcell"><input type="checkbox" id="log_75" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_76"></textarea></td><td><input type="text" id="log_77"></td><td><textarea id="log_78"></textarea></td></tr><tr><td class="gamenum">3</td><td><input type="text" id="log_79" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_80"></td><td><input type="text" id="log_81"></td><td><input type="text" id="log_82"></td><td><input type="text" id="log_83"></td><td class="cbcell"><input type="checkbox" id="log_84" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_85"></textarea></td><td><input type="text" id="log_86"></td><td><textarea id="log_87"></textarea></td></tr><tr><td class="gamenum">4</td><td><input type="text" id="log_88" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_89"></td><td><input type="text" id="log_90"></td><td><input type="text" id="log_91"></td><td><input type="text" id="log_92"></td><td class="cbcell"><input type="checkbox" id="log_93" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_94"></textarea></td><td><input type="text" id="log_95"></td><td><textarea id="log_96"></textarea></td></tr><tr><td class="gamenum">5</td><td><input type="text" id="log_97" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_98"></td><td><input type="text" id="log_99"></td><td><input type="text" id="log_100"></td><td><input type="text" id="log_101"></td><td class="cbcell"><input type="checkbox" id="log_102" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_103"></textarea></td><td><input type="text" id="log_104"></td><td><textarea id="log_105"></textarea></td></tr><tr><td class="gamenum">6</td><td><input type="text" id="log_106" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_107"></td><td><input type="text" id="log_108"></td><td><input type="text" id="log_109"></td><td><input type="text" id="log_110"></td><td class="cbcell"><input type="checkbox" id="log_111" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_112"></textarea></td><td><input type="text" id="log_113"></td><td><textarea id="log_114"></textarea></td></tr><tr><td class="gamenum">7</td><td><input type="text" id="log_115" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_116"></td><td><input type="text" id="log_117"></td><td><input type="text" id="log_118"></td><td><input type="text" id="log_119"></td><td class="cbcell"><input type="checkbox" id="log_120" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_121"></textarea></td><td><input type="text" id="log_122"></td><td><textarea id="log_123"></textarea></td></tr><tr><td class="gamenum">8</td><td><input type="text" id="log_124" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_125"></td><td><input type="text" id="log_126"></td><td><input type="text" id="log_127"></td><td><input type="text" id="log_128"></td><td class="cbcell"><input type="checkbox" id="log_129" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_130"></textarea></td><td><input type="text" id="log_131"></td><td><textarea id="log_132"></textarea></td></tr><tr><td class="gamenum">9</td><td><input type="text" id="log_133" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_134"></td><td><input type="text" id="log_135"></td><td><input type="text" id="log_136"></td><td><input type="text" id="log_137"></td><td class="cbcell"><input type="checkbox" id="log_138" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_139"></textarea></td><td><input type="text" id="log_140"></td><td><textarea id="log_141"></textarea></td></tr><tr><td class="gamenum">10</td><td><input type="text" id="log_142" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_143"></td><td><input type="text" id="log_144"></td><td><input type="text" id="log_145"></td><td><input type="text" id="log_146"></td><td class="cbcell"><input type="checkbox" id="log_147" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_148"></textarea></td><td><input type="text" id="log_149"></td><td><textarea id="log_150"></textarea></td></tr><tr><td class="gamenum">11</td><td><input type="text" id="log_151" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_152"></td><td><input type="text" id="log_153"></td><td><input type="text" id="log_154"></td><td><input type="text" id="log_155"></td><td class="cbcell"><input type="checkbox" id="log_156" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_157"></textarea></td><td><input type="text" id="log_158"></td><td><textarea id="log_159"></textarea></td></tr><tr><td class="gamenum">12</td><td><input type="text" id="log_160" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_161"></td><td><input type="text" id="log_162"></td><td><input type="text" id="log_163"></td><td><input type="text" id="log_164"></td><td class="cbcell"><input type="checkbox" id="log_165" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_166"></textarea></td><td><input type="text" id="log_167"></td><td><textarea id="log_168"></textarea></td></tr><tr><td class="gamenum">13</td><td><input type="text" id="log_169" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_170"></td><td><input type="text" id="log_171"></td><td><input type="text" id="log_172"></td><td><input type="text" id="log_173"></td><td class="cbcell"><input type="checkbox" id="log_174" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_175"></textarea></td><td><input type="text" id="log_176"></td><td><textarea id="log_177"></textarea></td></tr><tr><td class="gamenum">14</td><td><input type="text" id="log_178" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_179"></td><td><input type="text" id="log_180"></td><td><input type="text" id="log_181"></td><td><input type="text" id="log_182"></td><td class="cbcell"><input type="checkbox" id="log_183" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_184"></textarea></td><td><input type="text" id="log_185"></td><td><textarea id="log_186"></textarea></td></tr><tr><td class="gamenum">15</td><td><input type="text" id="log_187" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_188"></td><td><input type="text" id="log_189"></td><td><input type="text" id="log_190"></td><td><input type="text" id="log_191"></td><td class="cbcell"><input type="checkbox" id="log_192" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_193"></textarea></td><td><input type="text" id="log_194"></td><td><textarea id="log_195"></textarea></td></tr><tr><td class="gamenum">16</td><td><input type="text" id="log_196" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_197"></td><td><input type="text" id="log_198"></td><td><input type="text" id="log_199"></td><td><input type="text" id="log_200"></td><td class="cbcell"><input type="checkbox" id="log_201" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_202"></textarea></td><td><input type="text" id="log_203"></td><td><textarea id="log_204"></textarea></td></tr><tr><td class="gamenum">17</td><td><input type="text" id="log_205" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_206"></td><td><input type="text" id="log_207"></td><td><input type="text" id="log_208"></td><td><input type="text" id="log_209"></td><td class="cbcell"><input type="checkbox" id="log_210" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_211"></textarea></td><td><input type="text" id="log_212"></td><td><textarea id="log_213"></textarea></td></tr><tr><td class="gamenum">18</td><td><input type="text" id="log_214" class="scale-in" inputmode="numeric"></td><td><input type="text" id="log_215"></td><td><input type="text" id="log_216"></td><td><input type="text" id="log_217"></td><td><input type="text" id="log_218"></td><td class="cbcell"><input type="checkbox" id="log_219" class="buy" data-cost="10" title="Spent 10 capital for +1 reputation this game"></td><td><textarea id="log_220"></textarea></td><td><input type="text" id="log_221"></td><td><textarea id="log_222"></textarea></td></tr>
+    </tbody>
+  </table>
+
+  <div class="panel">
+    <div class="bar"><span>CAMPAIGN SUMMARY</span></div>
+    <div class="statrow">
+      
+      <div class="statfield">
+        <div class="lab">FINAL SCALE<br>REACHED</div>
+        <input type="text" id="final_scale">
+      </div>
+      
+      <div class="statfield">
+        <div class="lab">FINAL TOTAL<br>REPUTATION</div>
+        <input type="text" id="final_rep">
+      </div>
+      
+      <div class="statfield">
+        <div class="lab">FINAL CAPITAL<br>(UNSPENT)</div>
+        <input type="text" id="final_capital">
+      </div>
+      
+      <div class="statfield">
+        <div class="lab">CAMPAIGN<br>WINNER</div>
+        <input type="text" id="campaign_winner">
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page" id="page3">
+  <div class="titleband">
+    <h1>A BILLION SUNS</h1>
+    <div class="sub">CAMPAIGN TRACKER &mdash; page 3 of 3 (optional &mdash; print if needed)</div>
+  </div>
+  <div class="panel notespanel">
+    <div class="bar"><span>ADDITIONAL NOTES / HOUSE RULES</span></div>
+    <textarea id="additional_notes" class="notesbox"></textarea>
+  </div>
+</section>
+<script>
+function bakeValues(){
+  document.querySelectorAll('input[type="text"]').forEach(function(el){
+    el.setAttribute('value', el.value);
+  });
+  document.querySelectorAll('textarea').forEach(function(el){
+    el.textContent = el.value;
+  });
+  document.querySelectorAll('input[type="checkbox"]').forEach(function(el){
+    if(el.disabled) return; // leave locked/always-checked boxes as authored
+    if(el.checked){ el.setAttribute('checked',''); }
+    else { el.removeAttribute('checked'); }
+  });
+}
+
+function flashSaved(msg){
+  var m = document.getElementById('savemsg');
+  m.textContent = msg;
+  setTimeout(function(){ if(m.textContent===msg) m.textContent=''; }, 4000);
+}
+
+function saveCopy(){
+  bakeValues();
+  var doc = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  var blob = new Blob([doc], {type:'text/html'});
+  var corp = (document.getElementById('corp_name').value || 'ABillionSuns').trim();
+  var safe = corp.replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'') || 'ABillionSuns';
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = safe + '_CampaignTracker.html';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  flashSaved('Saved a copy with your current entries \u2014 check your downloads.');
+}
+
+function printTracker(){
+  bakeValues();
+  window.print();
+}
+
+function resetForm(){
+  if(!confirm('Clear every field on all pages? This cannot be undone.')) return;
+  document.querySelectorAll('input[type="text"]').forEach(function(el){ el.value=''; el.removeAttribute('value'); });
+  updateTotalCapital();
+  document.querySelectorAll('textarea').forEach(function(el){ el.value=''; el.textContent=''; });
+  document.querySelectorAll('input[type="checkbox"]').forEach(function(el){
+    if(el.disabled) return;
+    el.checked=false; el.removeAttribute('checked');
+  });
+}
+
+var STARTING_CAPITAL = 10;
+function updateTotalCapital(){
+  var total = STARTING_CAPITAL;
+  document.querySelectorAll('input.scale-in').forEach(function(el){
+    var n = parseFloat(el.value);
+    if(!isNaN(n)) total += n;
+  });
+  document.getElementById('total_capital').value = total;
+  updateAvailableCapital(total);
+}
+function updateAvailableCapital(total){
+  var spent = 0;
+  document.querySelectorAll('input.buy').forEach(function(el){
+    if(el.checked){ var n = parseFloat(el.dataset.cost); if(!isNaN(n)) spent += n; }
+  });
+  var avail = total - spent;
+  var out = document.getElementById('avail_capital');
+  out.value = avail;
+  out.classList.toggle('negative', avail < 0);
+  out.title = avail < 0 ? 'Over budget: checked items cost more than capital earned'
+                        : 'Auto: Total earned minus checked costs';
+}
+document.addEventListener('change', function(e){
+  if(e.target.classList && e.target.classList.contains('buy')) updateTotalCapital();
+});
+document.addEventListener('input', function(e){
+  if(e.target.classList && e.target.classList.contains('scale-in')) updateTotalCapital();
+});
+document.addEventListener('DOMContentLoaded', updateTotalCapital);
+updateTotalCapital();
+
+window.addEventListener('beforeprint', bakeValues);
+</script>
+</body>
+</html>
