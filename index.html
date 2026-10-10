@@ -20,15 +20,15 @@
     <span class="logo">a<b>billion</b>suns</span>
     <span class="corp" id="hdr-corp"></span>
   </div>
-  <div class="capital-pill" id="hdr-capital" title="Capital available to spend">
-    <span class="lab">Capital</span><span class="val" id="hdr-capital-val">10</span>
+  <div class="capital-pill" id="hdr-rep" title="Total reputation">
+    <span class="lab">Reputation</span><span class="val" id="hdr-rep-val">0</span>
   </div>
 </header>
 
 <main id="main">
 
-  <!-- CAMPAIGN -->
-  <section class="view" id="view-campaign" data-view="campaign">
+  <!-- OVERVIEW -->
+  <section class="view" id="view-overview" data-view="overview">
     <div class="group">
       <label class="field"><span>Corporation name</span><input type="text" data-bind="corp" autocomplete="off"></label>
       <div class="row2">
@@ -39,12 +39,11 @@
 
     <h2 class="sect">Campaign status</h2>
     <div class="tiles">
+      <div class="tile calc"><span class="lab">Total reputation</span><span class="big" id="st-rep">0</span><span class="note">Log rep gained + bought rep</span></div>
+      <div class="tile calc"><span class="lab">Games played</span><span class="big" id="st-games">0</span><span class="note">Games in the log</span></div>
       <div class="tile calc"><span class="lab">Total capital earned</span><span class="big" id="st-total">10</span><span class="note">10 + sum of game Scales</span></div>
       <div class="tile calc"><span class="lab">Available to spend</span><span class="big" id="st-avail">10</span><span class="note">Earned − unlocks − bought rep</span></div>
-      <label class="tile"><span class="lab">Current scale <small>(max 10)</small></span><input class="big" type="number" inputmode="numeric" min="1" max="10" data-bind="campScale"></label>
-      <label class="tile"><span class="lab">Total reputation</span><input class="big" type="number" inputmode="numeric" data-bind="totalRep"></label>
-      <div class="tile calc"><span class="lab">Games played</span><span class="big" id="st-games">0</span><span class="note">Games in the log</span></div>
-      <div class="tile calc"><span class="lab">Unlocked</span><span class="big" id="st-unlocked">1</span><span class="note" id="st-unlocked-note">ship classes</span></div>
+      <label class="tile span2"><span class="lab">Current campaign scale <small>(starts at 3, +1 per game, max 10)</small></span><input class="big" type="number" inputmode="numeric" min="1" max="10" placeholder="3" data-bind="campScale"></label>
     </div>
 
     <details class="group fold">
@@ -62,6 +61,7 @@
 
   <!-- UNLOCKS -->
   <section class="view" id="view-unlocks" data-view="unlocks" hidden>
+    <div class="avail-bar"><span>Capital available</span><b id="unl-avail">10</b></div>
     <p class="hint">Tick a ship class or competitive advantage when you buy it. Its cost comes out of your available capital.</p>
     <h2 class="sect">Ship classes <span class="rt">Cost</span></h2>
     <div class="list" id="ship-checklist"></div>
@@ -69,8 +69,55 @@
     <div id="adv-checklist"></div>
   </section>
 
-  <!-- GAMES -->
-  <section class="view" id="view-games" data-view="games" hidden>
+  <!-- BATTLE (in-game) -->
+  <section class="view" id="view-battle" data-view="battle" hidden>
+    <div class="tiles">
+      <div class="tile">
+        <span class="lab">Round</span>
+        <div class="stepper"><button type="button" data-bstep="round" data-d="-1" aria-label="Previous round">−</button><b id="b-round">1</b><button type="button" data-bstep="round" data-d="1" aria-label="Next round">+</button></div>
+      </div>
+      <div class="tile">
+        <span class="lab">Game scale</span>
+        <div class="stepper"><button type="button" data-bstep="scale" data-d="-1" aria-label="Lower scale">−</button><b id="b-scale">3</b><button type="button" data-bstep="scale" data-d="1" aria-label="Raise scale">+</button></div>
+      </div>
+    </div>
+
+    <h2 class="sect">Command helm <span class="rt" id="b-tokens"></span></h2>
+    <div class="helm" id="b-helm"></div>
+    <p class="hint small">Tap a token to mark it spent. Starting a new round keeps your allocation and clears spent tokens.</p>
+
+    <h2 class="sect">Credits</h2>
+    <div class="credits" id="b-credits-card">
+      <div class="cred-main"><b id="b-credits">0</b><span id="b-credits-state">Break even</span></div>
+      <div class="chips">
+        <button type="button" class="chip" data-earn="1">+1</button>
+        <button type="button" class="chip" data-earn="2">+2</button>
+        <button type="button" class="chip" data-earn="3">+3</button>
+        <button type="button" class="chip" data-earn="5">+5</button>
+        <button type="button" class="chip neg" data-earn="-1">−1</button>
+      </div>
+      <form class="earn-form" id="b-earn-form">
+        <input type="number" inputmode="numeric" name="amt" placeholder="± credits" aria-label="Credits amount" required>
+        <input type="text" name="note" placeholder="Source (optional)" aria-label="Note">
+        <button type="submit" class="btn primary">Add</button>
+      </form>
+    </div>
+
+    <h2 class="sect">Battlegroups <span class="rt warn" id="b-util"></span></h2>
+    <button class="btn primary wide" type="button" id="btn-req">+ Requisition battlegroup</button>
+    <div id="b-bgs"></div>
+
+    <h2 class="sect">Credit ledger</h2>
+    <div id="b-ledger"></div>
+
+    <div class="btns two">
+      <button class="btn primary" type="button" id="btn-finish">Finish game → Log</button>
+      <button class="btn danger" type="button" id="btn-discard">Discard game</button>
+    </div>
+  </section>
+
+  <!-- LOG -->
+  <section class="view" id="view-log" data-view="log" hidden>
     <button class="btn primary wide" id="btn-add-game" type="button">+ Log a game</button>
     <div id="game-list"></div>
     <p class="empty" id="game-empty">No games logged yet. Each game’s Scale is added to your capital.</p>
@@ -116,9 +163,10 @@
 </main>
 
 <nav class="tabbar" aria-label="Sections">
-  <button type="button" data-tab="campaign" aria-current="page"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Campaign</span></button>
+  <button type="button" data-tab="overview" aria-current="page"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Overview</span></button>
   <button type="button" data-tab="unlocks"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0"/></svg><span>Unlocks</span></button>
-  <button type="button" data-tab="games"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span>Games</span></button>
+  <button type="button" data-tab="battle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v5M12 18v5M1 12h5M18 12h5"/></svg><span>Battle</span></button>
+  <button type="button" data-tab="log"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span>Log</span></button>
   <button type="button" data-tab="ships"><svg viewBox="0 0 24 24"><path d="M12 2 4 20l8-4 8 4z"/></svg><span>Ships</span></button>
   <button type="button" data-tab="more"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>More</span></button>
 </nav>
@@ -138,7 +186,7 @@
       <label class="field"><span>Final credits</span><input type="text" inputmode="numeric" name="credits"></label>
     </div>
     <div class="row2">
-      <label class="field"><span>Rep. gained</span><input type="text" inputmode="numeric" name="rep"></label>
+      <label class="field"><span>Rep. gained <small>(win +1, profit +1)</small></span><input type="text" inputmode="numeric" name="rep"></label>
       <label class="field check"><input type="checkbox" name="boughtRep"><span>Bought rep (−10 capital)</span></label>
     </div>
     <label class="field"><span>Ship classes / advantages purchased</span><textarea name="purchases" rows="2"></textarea></label>
@@ -148,6 +196,24 @@
       <span class="spacer"></span>
       <button type="button" class="btn" value="cancel" id="btn-cancel-game">Cancel</button>
       <button type="submit" class="btn primary" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="req-dialog">
+  <form method="dialog" id="req-form">
+    <h3>Requisition battlegroup</h3>
+    <label class="field"><span>Ship class</span><select name="ship" id="req-ship"></select></label>
+    <label class="field"><span>Ships in battlegroup (max 5)</span>
+      <div class="stepper"><button type="button" data-rstep="-1" aria-label="Fewer ships">−</button><b id="req-count">1</b><button type="button" data-rstep="1" aria-label="More ships">+</button></div>
+    </label>
+    <label class="field"><span>Name (optional)</span><input type="text" name="name" placeholder="e.g. Alpha"></label>
+    <p class="req-cost">Cost: <b id="req-cost">0</b> credits <span id="req-after"></span></p>
+    <p class="hint small" id="req-warn"></p>
+    <div class="dlg-actions">
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="btn-req-cancel">Cancel</button>
+      <button type="submit" class="btn primary">Requisition</button>
     </div>
   </form>
 </dialog>

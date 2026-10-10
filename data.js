@@ -4,6 +4,18 @@
 
 const STARTING_CAPITAL = 10;
 const REP_PURCHASE_COST = 10;
+const MAX_BATTLEGROUP_SIZE = 5;
+const TACTICAL_SAVANT_ID = 'adv_32';   // +1 CMD token per round
+
+// Command helm slots. Seize Initiative changes the initiative roll-off die (lowest wins).
+const HELM_SLOTS = [
+  { key: 'seize', name: 'Seize Initiative', spendable: false },
+  { key: 'jump', name: 'Jump In', spendable: true, help: 'Spend 1 to deploy a jump point, deploy a battlegroup, or pass.' },
+  { key: 'tac', name: 'Tactical', spendable: true, help: 'Power to Engines / Weapons / Shields / Inertial Dampeners, Combined Orders, Executive Override.' },
+];
+function seizeDie(tokens) {
+  return tokens >= 4 ? 'D3' : ['D12', 'D10', 'D8', 'D6'][tokens];
+}
 
 const CARRIER_SCRAMBLE = 'Carrier: scramble one battlegroup of Mass 0 ships or Light Utility Ships once per round, at the start of its activation, deployed within jump range of the carrier. It may count as having a free Combined Order with the carrier that round.';
 const CARRIER_EMBARK = 'Re-embark: Mass 0 / Light Utility battlegroups may treat a friendly Carrier as a jump point when jumping out (not a jump-out for contracts) and may transfer contract tokens to it.';

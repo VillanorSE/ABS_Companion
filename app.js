@@ -14,6 +14,18 @@
       games: [],               // {scale,date,opp,win,credits,rep,boughtRep,purchases,notes}
       summary: { finalScale: '', finalRep: '', finalCapital: '', winner: '' },
       notes: '',
+      battle: blankBattle(),
+    };
+  }
+
+  function blankBattle() {
+    return {
+      round: 1, scale: null,
+      helm: { seize: 0, jump: 0, tac: 0 },
+      spent: { jump: 0, tac: 0 },
+      bgs: [],                 // {id, ship, count, round, name, status: 'in'|'out'|'dead'}
+      ledger: [],              // {round, amt, note, bg}
+      nextBg: 1,
     };
   }
 
@@ -28,7 +40,8 @@
   }
 
   let state = load(STORE_KEY, blankState());
-  const prefs = load(PREFS_KEY, { tab: 'campaign', shipFilter: 'mine', warzone: false });
+  const prefs = load(PREFS_KEY, { tab: 'overview', shipFilter: 'mine', warzone: false });
+  prefs.tab = { campaign: 'overview', games: 'log' }[prefs.tab] || prefs.tab;   // tabs renamed in v2
 
   let saveTimer = null;
   function save() {
@@ -71,14 +84,19 @@
     const av = $('#st-avail');
     av.textContent = c.avail;
     av.classList.toggle('neg', c.avail < 0);
-    $('#hdr-capital-val').textContent = c.avail;
-    $('#hdr-capital').classList.toggle('neg', c.avail < 0);
+    const ua = $('#unl-avail');
+    ua.textContent = c.avail;
+    ua.classList.toggle('neg', c.avail < 0);
+    const rep = reputation();
+    $('#st-rep').textContent = rep;
+    $('#hdr-rep-val').textContent = rep;
     $('#st-games').textContent = state.games.length;
-    const ownedShips = SHIPS.filter(isOwned).length;
-    const ownedAdvs = ALL_ADVS.filter((a) => state.unlocked[a.id]).length;
-    $('#st-unlocked').textContent = ownedShips;
-    $('#st-unlocked-note').textContent = 'ship classes · ' + ownedAdvs + ' advantage' + (ownedAdvs === 1 ? '' : 's');
     $('#hdr-corp').textContent = state.corp || 'Unnamed corporation';
+  }
+
+  // Campaign reputation: win +1, positive final credits +1 (entered per game), +1 per 10 capital spent on rep.
+  function reputation() {
+    return state.games.reduce((s, g) => s + num(g.rep) + (g.boughtRep ? 1 : 0), 0);
   }
 
   // ---------- bound fields ----------
@@ -94,6 +112,7 @@
     setPath(state, el.dataset.bind, el.value);
     save();
     if (el.dataset.bind === 'corp') renderStatus();
+    if (el.dataset.bind === 'campScale') renderBattle();
   });
 
   // ---------- unlocks ----------
@@ -128,6 +147,7 @@
     save();
     renderStatus();
     renderShips();
+    renderBattle();
   });
 
   // ---------- games ----------
@@ -155,10 +175,15 @@
   const dlg = $('#game-dialog');
   const form = $('#game-form');
   let editing = -1;
+  let fromBattle = false;    // saving this dialog finishes the current Battle
+  let repTouched = false;    // stop auto-suggesting rep once the player edits it
 
-  function openGame(i) {
+  function openGame(i, prefill) {
     editing = i;
-    const g = i >= 0 ? state.games[i] : { scale: state.campScale || '', date: new Date().toISOString().slice(0, 10) };
+    fromBattle = !!prefill;
+    const g = i >= 0 ? state.games[i]
+      : Object.assign({ scale: state.campScale || '', date: new Date().toISOString().slice(0, 10) }, prefill);
+    repTouched = i >= 0;
     $('#game-dialog-title').textContent = i >= 0 ? 'Game ' + (i + 1) : 'Log game ' + (state.games.length + 1);
     $('#btn-del-game').hidden = i < 0;
     Array.from(form.elements).forEach((el) => {
@@ -166,6 +191,7 @@
       if (el.type === 'checkbox') el.checked = !!g[el.name];
       else el.value = g[el.name] == null ? '' : g[el.name];
     });
+    if (i < 0) suggestRep();
     if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
   }
   function closeGame() { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); }
@@ -193,8 +219,18 @@
       g[el.name] = el.type === 'checkbox' ? el.checked : el.value.trim();
     });
     if (editing >= 0) state.games[editing] = g; else state.games.push(g);
+    if (fromBattle) { state.battle = blankBattle(); renderBattle(); showTab('log'); }
     save(); closeGame(); renderGames(); renderStatus();
   });
+  function suggestRep() {
+    if (repTouched) return;
+    const won = form.elements.win.value === 'Win';
+    const profit = num(form.elements.credits.value) > 0;
+    form.elements.rep.value = (won ? 1 : 0) + (profit ? 1 : 0);
+  }
+  form.elements.rep.addEventListener('input', () => { repTouched = true; });
+  form.elements.win.addEventListener('change', suggestRep);
+  form.elements.credits.addEventListener('input', suggestRep);
 
   // ---------- ship cards ----------
   function weaponRow(kind, w) {
@@ -255,6 +291,181 @@
   }));
   $('#opt-wz').addEventListener('change', (e) => { prefs.warzone = e.target.checked; savePrefs(); renderShips(); });
 
+  // ---------- battle (in-game tracker) ----------
+  const B = () => state.battle;
+  const shipById = (id) => SHIPS.find((s) => s.id === id);
+  const STATUS = { in: 'In play', out: 'Jumped out', dead: 'Destroyed' };
+  const NEXT_STATUS = { in: 'out', out: 'dead', dead: 'in' };
+
+  function battleScale() { return B().scale || num(state.campScale) || 3; }
+  function cmdTokens() { return battleScale() + 3 + (state.unlocked[TACTICAL_SAVANT_ID] ? 1 : 0); }
+  function battleCredits() { return B().ledger.reduce((s, e) => s + e.amt, 0); }
+  const signed = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n);
+
+  function renderBattle() {
+    const b = B();
+    $('#b-round').textContent = b.round;
+    $('#b-scale').textContent = battleScale();
+
+    // helm
+    const total = cmdTokens();
+    const assigned = b.helm.seize + b.helm.jump + b.helm.tac;
+    const left = total - assigned;
+    const tk = $('#b-tokens');
+    tk.textContent = left === 0 ? total + ' tokens assigned' : left > 0 ? left + ' of ' + total + ' unassigned' : Math.abs(left) + ' over (' + total + ' max)';
+    tk.classList.toggle('warn', left < 0);
+    $('#b-helm').innerHTML = HELM_SLOTS.map((s) => {
+      const n = b.helm[s.key];
+      const spent = s.spendable ? Math.min(b.spent[s.key], n) : 0;
+      const pips = Array.from({ length: n }, (_, i) =>
+        `<button type="button" class="pip ${i < spent ? 'used' : ''}" ${s.spendable ? `data-pip="${s.key}" data-i="${i}" aria-label="Token ${i + 1}${i < spent ? ' (spent)' : ''}"` : 'disabled aria-hidden="true"'}></button>`).join('');
+      const sub = s.key === 'seize' ? `Initiative roll-off: <b>${seizeDie(n)}</b>` : `${n - spent} left`;
+      return `<div class="slot slot-${s.key}">
+        <div class="slot-h"><b>${s.name}</b><span>${sub}</span></div>
+        <div class="slot-body">
+          <div class="pips">${pips || '<span class="nopip">No tokens</span>'}</div>
+          <div class="stepper sm"><button type="button" data-helm="${s.key}" data-d="-1" aria-label="Remove token from ${s.name}">−</button><b>${n}</b><button type="button" data-helm="${s.key}" data-d="1" aria-label="Add token to ${s.name}">+</button></div>
+        </div>
+        ${s.help ? `<p class="slot-help">${s.help}</p>` : ''}
+      </div>`;
+    }).join('');
+
+    // credits
+    const cr = battleCredits();
+    $('#b-credits').textContent = signed(cr);
+    $('#b-credits-state').textContent = cr > 0 ? 'Profit' : cr < 0 ? 'Deficit' : 'Break even';
+    $('#b-credits-card').className = 'credits ' + (cr > 0 ? 'profit' : cr < 0 ? 'deficit' : '');
+
+    // battlegroups
+    const inPlay = b.bgs.filter((g) => g.status === 'in');
+    const utes = inPlay.reduce((s, g) => s + (/Utility/.test(shipById(g.ship).name) ? g.count : 0), 0);
+    const util = $('#b-util');
+    util.textContent = utes ? 'Utility ships ' + utes + '/' + battleScale() : '';
+    util.classList.toggle('warn', utes > battleScale());
+    $('#b-bgs').innerHTML = b.bgs.length ? b.bgs.map((g) => {
+      const s = shipById(g.ship);
+      return `<div class="bg st-${g.status}">
+        <div class="bg-main">
+          <b>${esc(g.name || 'BG ' + g.id)}</b> · ${g.count}× ${esc(s.name)}
+          <small>Round ${g.round} · ${g.count * s.cost} credits</small>
+        </div>
+        <button type="button" class="status" data-bgstatus="${g.id}">${STATUS[g.status]}</button>
+        <button type="button" class="x" data-bgdel="${g.id}" aria-label="Remove battlegroup">×</button>
+      </div>`;
+    }).join('') : '<p class="empty sm">No battlegroups requisitioned yet.</p>';
+
+    // ledger, newest round first
+    const rounds = [...new Set(b.ledger.map((e) => e.round))].sort((x, y) => y - x);
+    $('#b-ledger').innerHTML = rounds.length ? rounds.map((r) => {
+      const entries = b.ledger.map((e, i) => ({ e, i })).filter((x) => x.e.round === r);
+      const net = entries.reduce((s, x) => s + x.e.amt, 0);
+      return `<div class="round-block"><div class="round-h"><b>Round ${r}</b><span>${signed(net)}</span></div>
+        ${entries.map(({ e, i }) => `<div class="entry"><span class="amt ${e.amt < 0 ? 'neg' : 'pos'}">${signed(e.amt)}</span><span class="what">${esc(e.note || (e.amt < 0 ? 'Spent' : 'Revenue'))}</span>${e.bg ? '' : `<button type="button" class="x" data-ledel="${i}" aria-label="Delete entry">×</button>`}</div>`).join('')}
+      </div>`;
+    }).join('') : '<p class="empty sm">Requisitions and revenue will show here, round by round.</p>';
+  }
+
+  function addLedger(amt, note, bg) {
+    if (!amt) return;
+    B().ledger.push({ round: B().round, amt, note: note || '', bg: bg || null });
+    save(); renderBattle();
+  }
+
+  $('#view-battle').addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    const b = B();
+    if (t.dataset.bstep === 'round') {
+      const next = Math.max(1, b.round + num(t.dataset.d));
+      if (next > b.round) b.spent = { jump: 0, tac: 0 };   // End Phase: spent tokens come back
+      b.round = next;
+    } else if (t.dataset.bstep === 'scale') {
+      b.scale = Math.min(10, Math.max(1, battleScale() + num(t.dataset.d)));
+    } else if (t.dataset.helm) {
+      const k = t.dataset.helm;
+      b.helm[k] = Math.max(0, b.helm[k] + num(t.dataset.d));
+      if (b.spent[k] > b.helm[k]) b.spent[k] = b.helm[k];
+    } else if (t.dataset.pip) {
+      const k = t.dataset.pip, i = +t.dataset.i;
+      b.spent[k] = b.spent[k] === i + 1 ? i : i + 1;   // tap the last spent token to un-spend it
+    } else if (t.dataset.earn) {
+      addLedger(num(t.dataset.earn), ''); return;
+    } else if (t.dataset.bgstatus) {
+      const g = b.bgs.find((x) => x.id === +t.dataset.bgstatus);
+      g.status = NEXT_STATUS[g.status];
+    } else if (t.dataset.bgdel) {
+      const id = +t.dataset.bgdel;
+      const g = b.bgs.find((x) => x.id === id);
+      if (!confirm('Remove ' + (g.name || 'BG ' + g.id) + '? This also refunds its requisition cost (use it to undo a mistake).')) return;
+      b.bgs = b.bgs.filter((x) => x.id !== id);
+      b.ledger = b.ledger.filter((x) => x.bg !== id);
+    } else if (t.dataset.ledel) {
+      b.ledger.splice(+t.dataset.ledel, 1);
+    } else return;
+    save(); renderBattle();
+  });
+
+  $('#b-earn-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = e.target;
+    addLedger(Math.round(num(f.amt.value)), f.note.value.trim());
+    f.reset();
+  });
+
+  // requisition dialog
+  const reqDlg = $('#req-dialog');
+  const reqForm = $('#req-form');
+  let reqCount = 1;
+  function renderReq() {
+    const s = shipById(reqForm.ship.value);
+    const cost = s.cost * reqCount;
+    $('#req-count').textContent = reqCount;
+    $('#req-cost').textContent = cost;
+    $('#req-after').textContent = '(credits after: ' + signed(battleCredits() - cost) + ')';
+    $('#req-warn').textContent = isOwned(s) ? '' : 'Your corporation hasn’t unlocked this class in the campaign.';
+  }
+  $('#btn-req').addEventListener('click', () => {
+    const opt = (s) => `<option value="${s.id}">${esc(s.name)} — ${s.cost} cr each</option>`;
+    const locked = SHIPS.filter((s) => !isOwned(s));
+    reqForm.ship.innerHTML = `<optgroup label="Unlocked">${SHIPS.filter(isOwned).map(opt).join('')}</optgroup>` +
+      (locked.length ? `<optgroup label="Not unlocked">${locked.map(opt).join('')}</optgroup>` : '');
+    reqCount = 1; reqForm.name.value = '';
+    renderReq();
+    reqDlg.showModal();
+  });
+  reqForm.ship.addEventListener('change', renderReq);
+  reqForm.addEventListener('click', (e) => {
+    const d = e.target.dataset && e.target.dataset.rstep;
+    if (!d) return;
+    reqCount = Math.min(MAX_BATTLEGROUP_SIZE, Math.max(1, reqCount + num(d)));
+    renderReq();
+  });
+  $('#btn-req-cancel').addEventListener('click', () => reqDlg.close());
+  reqForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const b = B();
+    const s = shipById(reqForm.ship.value);
+    const id = b.nextBg++;
+    const name = reqForm.name.value.trim();
+    b.bgs.push({ id, ship: s.id, count: reqCount, round: b.round, name, status: 'in' });
+    reqDlg.close();
+    addLedger(-s.cost * reqCount, 'Requisition ' + (name || 'BG ' + id) + ': ' + reqCount + '× ' + s.name, id);
+  });
+
+  $('#btn-finish').addEventListener('click', () => {
+    const b = B();
+    const fleet = b.bgs.map((g) => `${g.name || 'BG ' + g.id}: ${g.count}× ${shipById(g.ship).name} (R${g.round}, ${STATUS[g.status].toLowerCase()})`);
+    openGame(-1, {
+      scale: battleScale(),
+      credits: String(battleCredits()),
+      notes: [b.round + ' rounds.', ...fleet].join('\n'),
+    });
+  });
+  $('#btn-discard').addEventListener('click', () => {
+    if (!confirm('Discard this game’s round, helm, battlegroups and credits?')) return;
+    state.battle = blankBattle(); save(); renderBattle();
+  });
+
   // ---------- tabs ----------
   function showTab(tab) {
     prefs.tab = tab; savePrefs();
@@ -265,7 +476,7 @@
     window.scrollTo(0, 0);
   }
   $$('.tabbar button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
-  $('#hdr-capital').addEventListener('click', () => showTab('unlocks'));
+  $('#hdr-rep').addEventListener('click', () => showTab('log'));
 
   // ---------- backup ----------
   function setStatus(msg, err) {
@@ -352,9 +563,9 @@
   });
 
   // ---------- boot ----------
-  function renderAll() { renderBound(); renderUnlocks(); renderGames(); renderShips(); renderStatus(); }
+  function renderAll() { renderBound(); renderUnlocks(); renderGames(); renderShips(); renderBattle(); renderStatus(); }
   renderAll();
-  showTab(prefs.tab || 'campaign');
+  showTab($('[data-view="' + prefs.tab + '"]') ? prefs.tab : 'overview');
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});

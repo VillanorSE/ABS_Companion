@@ -4,9 +4,10 @@ An unofficial mobile companion for the tabletop game *A Billion Suns*: a campaig
 
 Open the GitHub Pages site on your phone and choose **Add to Home Screen** to install it. It works offline, and your campaign is saved on the device. Use **More → Export backup** to move a campaign between devices.
 
-- **Campaign**: corporation details and status. Capital is calculated automatically (10 + game Scales − purchases).
+- **Overview**: corporation details and campaign status. Capital and reputation are calculated from the log and unlocks.
 - **Unlocks**: ship classes and competitive advantages.
-- **Games**: per-game log.
+- **Battle**: in-game tracker with round, command helm (Seize Initiative / Jump In / Tactical tokens), credits ledger, and battlegroup requisitions. Use "Finish game → Log" to record the result.
+- **Log**: per-game log.
 - **Ships**: stat cards for your unlocked ships, or toggle to show all ships.
 
 `ABS_Campaign_Tracker.html` is the printable tracker. A filled-in "Save a copy" file from it can be imported into the app.
