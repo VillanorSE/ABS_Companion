@@ -359,3 +359,40 @@ textarea.notes{min-height:200px;}
 .contract{cursor:pointer;}
 .contract:focus-visible{outline:2px solid var(--blue);outline-offset:2px;}
 .contract header .chevbtn{pointer-events:none;}
+
+/* v5: buy-now list, prerequisites, modded stats */
+.buynow{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;margin:4px 0 6px;}
+.buy-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);}
+.buy-row .bn{flex:1;min-width:0;}
+.buy-row .bn small{display:block;color:var(--muted);font-size:12px;}
+.buy-row .cost{font-weight:800;color:var(--accent);min-width:24px;text-align:right;}
+.buy-row.later{opacity:.6;}
+.buy-row.later .cost{color:var(--muted);}
+.btn.sm{padding:6px 12px;font-size:13px;border-radius:8px;}
+.later-h{margin:12px 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;}
+.buynow .none{color:var(--muted);font-size:14px;margin:6px 0;}
+.item.blocked .name{opacity:.55;}
+.needs{color:var(--bad) !important;}
+.mod{color:var(--good);font-weight:800;}
+.applied{margin:0;padding:6px 12px;font-size:12px;color:var(--good);border-top:1px solid var(--line);}
+
+/* v5: helm spend area, adv notes */
+.pips[data-spend]{cursor:pointer;border-radius:8px;padding:2px;}
+.pips[data-spend]:focus-visible{outline:2px solid var(--blue);}
+.pips span.pip{display:inline-block;}
+.helm-info dt.adv-note{color:var(--good);}
+
+/* v5: activation, next round, toast */
+.bg-main[data-bgact]{cursor:pointer;}
+.act-chip{display:inline-block;margin-top:6px;font-size:12px;font-weight:700;color:var(--muted);border:1px dashed var(--line);border-radius:999px;padding:3px 10px;}
+.bg.acted{border-color:var(--good);}
+.bg.acted .act-chip{color:#0b1222;background:var(--good);border:1px solid var(--good);}
+.bg.acted .bg-main > b{color:var(--good);}
+.next-round{margin-top:20px;font-size:17px;padding:14px;}
+.btns.two{margin-top:10px;}
+.toast{position:fixed;left:12px;right:12px;bottom:calc(70px + var(--safe-b));z-index:40;display:flex;align-items:center;gap:12px;
+  background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 6px 20px rgba(0,0,0,.5);
+  font-size:14px;max-width:736px;margin:0 auto;}
+.toast.warn{border-color:var(--accent);}
+.toast span{flex:1;}
+.toast button{background:none;border:1px solid var(--accent);color:var(--accent);border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;}

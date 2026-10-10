@@ -151,10 +151,11 @@
       <div class="tree"><h3>${esc(t.tree)}</h3><div class="list">
         ${t.items.map(([id, lvl, name, desc]) => {
           const on = !!state.unlocked[id];
+          const blocked = !on && !advEligible(id, state.unlocked);
           return `<div class="item-wrap">
-            <div class="item ${on ? 'on' : ''}">
+            <div class="item ${on ? 'on' : ''} ${blocked ? 'blocked' : ''}">
               <input type="checkbox" data-unlock="${id}" ${on ? 'checked' : ''} aria-label="Research ${esc(name)}">
-              <span class="name"><span class="lvl">L${lvl}</span>${esc(name)}<small>${esc(desc)}</small></span>
+              <span class="name"><span class="lvl">L${lvl}</span>${esc(name)}<small>${esc(desc)}</small>${blocked ? '<small class="needs">Prerequisites not met</small>' : ''}</span>
               <span class="cost">${lvl}</span>
               <button type="button" class="chevbtn" data-toggle-adv aria-expanded="false" aria-label="Full rules for ${esc(name)}">${CHEVRON}</button>
             </div>
@@ -163,7 +164,31 @@
         }).join('')}
       </div></div>`).join('');
     $$('#adv-checklist .adv-full').forEach((el) => { el.hidden = true; });
+    renderBuyNow();
   }
+
+  // Unlock options you can take right now: affordable, not owned, prerequisites met.
+  function renderBuyNow() {
+    const avail = capital().avail;
+    const ships = SHIPS.filter((s) => !isOwned(s)).map((s) => ({ id: s.id, name: s.name, cost: s.cost, kind: 'Ship class' }));
+    const advs = ALL_ADVS.filter((a) => advEligible(a.id, state.unlocked))
+      .map((a) => ({ id: a.id, name: a.name, cost: a.lvl, kind: 'L' + a.lvl + ' ' + a.tree }));
+    const all = ships.concat(advs).sort((x, y) => x.cost - y.cost);
+    const can = all.filter((o) => o.cost <= avail);
+    const later = all.filter((o) => o.cost > avail);
+    const row = (o, buy) => `<div class="buy-row ${buy ? '' : 'later'}"><span class="bn">${esc(o.name)}<small>${esc(o.kind)}</small></span>
+      <span class="cost">${o.cost}</span>${buy ? `<button type="button" class="btn sm" data-buy="${o.id}">Buy</button>` : ''}</div>`;
+    $('#buynow-count').textContent = '(' + can.length + ')';
+    $('#buynow-list').innerHTML = (can.length ? can.map((o) => row(o, true)).join('') : '<p class="none">Nothing affordable right now.</p>') +
+      (later.length ? `<p class="later-h">Eligible, need more capital</p>${later.map((o) => row(o, false)).join('')}` : '') +
+      '<p class="hint small">Advantages: only one Level 0, and you may research one advantage per campaign game.</p>';
+  }
+  $('#buynow-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-buy]');
+    if (!b) return;
+    state.unlocked[b.dataset.buy] = true;
+    save(); renderUnlocks(); renderStatus(); renderShips(); renderBattle();
+  });
 
   function setOpen(btn, body, open) {
     body.hidden = !open;
@@ -190,8 +215,8 @@
     const id = e.target.dataset && e.target.dataset.unlock;
     if (!id) return;
     if (e.target.checked) state.unlocked[id] = true; else delete state.unlocked[id];
-    e.target.closest('.item').classList.toggle('on', e.target.checked);
     save();
+    renderUnlocks();
     renderStatus();
     renderShips();
     renderBattle();
@@ -280,14 +305,22 @@
   form.elements.credits.addEventListener('input', suggestRep);
 
   // ---------- ship cards ----------
+  // Value that differs from the printed stat (because of an advantage) is highlighted.
+  const modVal = (val, base, unit) => (val !== base
+    ? `<span class="mod" title="Base ${base}${unit || ''}">${val}${unit || ''}</span>` : `${val}${unit || ''}`);
+
   function weaponRow(kind, w) {
     if (!w) return `<div class="wrow none"><span class="kind ${kind}">${kind}</span><span class="wn">None</span><span></span></div>`;
+    const range = w.baseRange && w.range !== w.baseRange ? `<span class="mod" title="Base ${esc(w.baseRange)}">${esc(w.range)}</span>` : esc(w.range);
     return `<div class="wrow">
       <span class="kind ${kind}">${kind}</span>
       <span class="wn">${esc(w.name)}${w.note ? `<small>${esc(w.note)}</small>` : ''}</span>
-      <span class="wv">${esc(w.range)} · <b>${esc(w.dice)}</b> · dmg ${w.dmg}</span>
+      <span class="wv">${range} · <b>${esc(w.dice)}</b> · dmg ${modVal(w.dmg, w.baseDmg == null ? w.dmg : w.baseDmg)}</span>
     </div>`;
   }
+
+  // Your advantages apply to your own (unlocked) ship classes.
+  const campaignHas = (id) => !!state.unlocked[id];
 
   function shipCard(s) {
     const owned = isOwned(s);
@@ -307,19 +340,23 @@
 
   function shipBody(s) {
     const owned = isOwned(s);
-    const jump = 6 - s.mass;
+    const f = fleetStats(s, owned ? campaignHas : () => false);
+    const advNames = [...f.applied].map((id) => ALL_ADVS.find((a) => a.id === id).name);
     return `<div class="stats">
         <div><b>${s.mass}</b><span>Mass</span></div>
-        <div><b>${s.thrust == null ? '–' : s.thrust + '″'}</b><span>Thrust</span></div>
-        <div><b>${s.sil}</b><span>Silhouette</span></div>
-        <div><b>${s.shields}</b><span>Shields</span></div>
+        <div><b>${f.thrust == null ? '–' : modVal(f.thrust, s.thrust, '″')}</b><span>Thrust</span></div>
+        <div><b>${modVal(f.sil, s.sil)}</b><span>Silhouette</span></div>
+        <div><b>${modVal(f.shields, s.shields)}</b><span>Shields</span></div>
       </div>
-      <div class="weap">${weaponRow('pri', s.pri)}${weaponRow('aux', s.aux)}</div>
+      <div class="weap">${weaponRow('pri', f.pri)}${weaponRow('aux', f.aux)}</div>
       <div class="derived">
-        <span>Jump range <b>${jump}″</b></span>
-        <span>Mother’s wing <b>${s.mass ? s.mass + '″' : '—'}</b></span>
+        <span>Jump range <b>${modVal(f.jump, 6 - s.mass, '″')}</b></span>
+        <span>Mother’s wing <b>${s.mass ? modVal(f.wing, s.mass, '″') : '—'}</b></span>
+        ${f.scan !== 3 ? `<span>Scan <b>${modVal(f.scan, 3, '″')}</b></span>` : ''}
+        <span>Explodes <b>${f.explode ? 'D6 ≤ ' + modVal(f.explode, s.mass) : 'never'}</b></span>
         ${owned || s.always ? '' : `<span>Unlock <b>${s.cost} capital</b></span>`}
       </div>
+      ${advNames.length ? `<p class="applied">Includes your advantages: ${advNames.map(esc).join(', ')}</p>` : ''}
       ${s.rules.length ? `<ul class="rules">${s.rules.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}`;
   }
 
@@ -360,14 +397,25 @@
   const helmOpen = new Set();
   const contractOpen = new Set();
 
-  // Silhouette after campaign frame advantages (Heavy Frames +1, Light Frames -1, min 1).
-  function effSil(s) {
-    let sil = s.sil;
-    if (!B().nonCampaign) {
-      if (state.unlocked.adv_33) sil += 1;
-      if (state.unlocked.adv_40) sil -= 1;
+  // Campaign advantages apply in campaign games only.
+  const battleHas = (id) => !B().nonCampaign && !!state.unlocked[id];
+  function effSil(s) { return fleetStats(s, battleHas).sil; }
+
+  // Utility ship limit: Ⓢ ships, +1 Light Utility Ship with Industrial Might (FAQ: individual ships).
+  function utilityCheck(extraShip, extraCount) {
+    let utes = 0, light = 0;
+    B().bgs.filter((g) => g.status === 'in').forEach((g) => {
+      const n = shipById(g.ship).name;
+      if (/Utility/.test(n)) utes += g.count;
+      if (n === 'Light Utility Ship') light += g.count;
+    });
+    if (extraShip && /Utility/.test(extraShip.name)) {
+      utes += extraCount;
+      if (extraShip.name === 'Light Utility Ship') light += extraCount;
     }
-    return Math.max(1, sil);
+    const might = battleHas('adv_47');
+    const limit = battleScale() + (might && light > 0 ? 1 : 0);
+    return { utes, limit, might, over: utes > limit };
   }
 
   // Replace scale symbols in contract stat cells with this game's numbers.
@@ -438,18 +486,24 @@
     $('#b-helm').innerHTML = HELM_SLOTS.map((s) => {
       const n = b.helm[s.key];
       const spent = s.spendable ? Math.min(b.spent[s.key], n) : 0;
-      const pips = Array.from({ length: n }, (_, i) =>
-        `<button type="button" class="pip ${i < spent ? 'used' : ''}" ${s.spendable ? `data-pip="${s.key}" data-i="${i}" aria-label="Token ${i + 1}${i < spent ? ' (spent)' : ''}"` : 'disabled aria-hidden="true"'}></button>`).join('');
+      const avail = n - spent;
+      const pips = Array.from({ length: n }, (_, i) => (i < avail
+        ? '<span class="pip"></span>'
+        : `<button type="button" class="pip used" data-refill="${s.key}" aria-label="Refill a ${s.name} token"></button>`)).join('');
+      const advNotes = HELM_ADVS[s.key].filter(battleHas).map((id) => {
+        const a = ALL_ADVS.find((x) => x.id === id);
+        return `<dt class="adv-note">Adv. ${esc(a.name)}</dt><dd>${esc(ADV_DETAILS[id][1])}</dd>`;
+      }).join('');
       const sub = s.key === 'seize' ? `Initiative roll-off: <b>${seizeDie(n)}</b>` : `${n - spent} left`;
       const open = helmOpen.has(s.key);
       return `<div class="slot slot-${s.key} ${open ? 'open' : ''}">
         <div class="slot-h"><button type="button" class="slot-title" data-helminfo="${s.key}" aria-expanded="${open}">${s.name}${CHEVRON}</button><span>${sub}</span></div>
         <div class="slot-body">
-          <div class="pips">${pips || '<span class="nopip">No tokens</span>'}</div>
+          <div class="pips" ${s.spendable && n ? `data-spend="${s.key}" role="button" tabindex="0" aria-label="Spend a ${s.name} token"` : ''}>${pips || '<span class="nopip">No tokens</span>'}</div>
           <div class="stepper sm"><button type="button" data-helm="${s.key}" data-d="-1" aria-label="Remove token from ${s.name}">−</button><b>${n}</b><button type="button" data-helm="${s.key}" data-d="1" aria-label="Add token to ${s.name}">+</button></div>
         </div>
         ${s.help ? `<p class="slot-help">${s.help}</p>` : ''}
-        <dl class="expand-body helm-info" ${open ? '' : 'hidden'}>${HELM_INFO[s.key].map(([h, t]) => `<dt>${esc(h)}</dt><dd>${esc(t)}</dd>`).join('')}</dl>
+        <dl class="expand-body helm-info" ${open ? '' : 'hidden'}>${HELM_INFO[s.key].map(([h, t]) => `<dt>${esc(h)}</dt><dd>${esc(t)}</dd>`).join('')}${advNotes}</dl>
       </div>`;
     }).join('');
 
@@ -460,22 +514,24 @@
     $('#b-credits-card').className = 'credits ' + (cr > 0 ? 'profit' : cr < 0 ? 'deficit' : '');
 
     // battlegroups
-    const inPlay = b.bgs.filter((g) => g.status === 'in');
-    const utes = inPlay.reduce((s, g) => s + (/Utility/.test(shipById(g.ship).name) ? g.count : 0), 0);
+    const uc = utilityCheck();
     const util = $('#b-util');
-    util.textContent = utes ? 'Utility ships ' + utes + '/' + battleScale() : '';
-    util.classList.toggle('warn', utes > battleScale());
+    util.textContent = uc.utes ? 'Utility ships ' + uc.utes + '/' + uc.limit + (uc.limit > battleScale() ? ' (Industrial Might)' : '') : '';
+    util.classList.toggle('warn', uc.over);
     $('#b-bgs').innerHTML = b.bgs.length ? b.bgs.map((g) => {
       const s = shipById(g.ship);
       const start = g.start || g.count, dmg = g.dmg || 0, sil = effSil(s);
       const lost = start - g.count;
       const ships = Array.from({ length: start }, (_, i) => `<span class="shippip ${i < g.count ? '' : 'lost'}"></span>`).join('');
       const crit = g.status === 'in' && g.count > 0 && dmg > s.mass;
-      return `<div class="bg st-${g.status}">
+      const canAct = g.status === 'in' && g.count > 0;
+      const f = fleetStats(s, battleHas);
+      return `<div class="bg st-${g.status} ${canAct && g.act ? 'acted' : ''}">
         <div class="bg-top">
-          <div class="bg-main">
+          <div class="bg-main" ${canAct ? `data-bgact="${g.id}" role="button" tabindex="0" aria-pressed="${!!g.act}"` : ''}>
             <b>${esc(g.name || 'BG ' + g.id)}</b> · ${start}× ${esc(s.name)}
-            <small>Round ${g.round} · ${start * s.cost} credits · Sil ${sil} · Ⓜ${s.mass}</small>
+            <small>Round ${g.round} · ${start * s.cost} cr · Sil ${sil} · Shields ${f.shields} · Ⓜ${s.mass}</small>
+            ${canAct ? `<span class="act-chip">${g.act ? '✓ Activated' : 'Tap to mark activated'}</span>` : ''}
           </div>
           <button type="button" class="status" data-bgstatus="${g.id}">${STATUS[g.status]}</button>
           <button type="button" class="x" data-bgdel="${g.id}" aria-label="Remove battlegroup">×</button>
@@ -533,25 +589,36 @@
   $('#view-battle').addEventListener('click', (e) => {
     const card = e.target.closest('[data-contract]');
     if (card) { toggleContract(card); return; }
+    const b = B();
+    const refill = e.target.closest('[data-refill]');
+    const spend = e.target.closest('[data-spend]');
+    const act = e.target.closest('[data-bgact]');
+    if (refill) {
+      const k = refill.dataset.refill;
+      b.spent[k] = Math.max(0, b.spent[k] - 1);
+      save(); renderBattle(); return;
+    }
+    if (spend) {
+      const k = spend.dataset.spend;
+      b.spent[k] = Math.min(b.helm[k], b.spent[k] + 1);
+      save(); renderBattle(); return;
+    }
+    if (act) {
+      const g = b.bgs.find((x) => x.id === +act.dataset.bgact);
+      g.act = !g.act;
+      save(); renderBattle(); return;
+    }
     const t = e.target.closest('button');
     if (!t) return;
-    const b = B();
     if (t.dataset.bstep === 'round') {
-      const next = Math.max(1, b.round + num(t.dataset.d));
-      if (next > b.round) {   // End Phase: remove all CMD tokens from the helm
-        b.helm = { seize: 0, jump: 0, tac: 0 };
-        b.spent = { jump: 0, tac: 0 };
-      }
-      b.round = next;
+      if (num(t.dataset.d) > 0) { nextRound(); return; }
+      b.round = Math.max(1, b.round - 1);
     } else if (t.dataset.bstep === 'scale') {
       b.scale = Math.min(10, Math.max(1, battleScale() + num(t.dataset.d)));
     } else if (t.dataset.helm) {
       const k = t.dataset.helm;
       b.helm[k] = Math.max(0, b.helm[k] + num(t.dataset.d));
       if (b.spent[k] > b.helm[k]) b.spent[k] = b.helm[k];
-    } else if (t.dataset.pip) {
-      const k = t.dataset.pip, i = +t.dataset.i;
-      b.spent[k] = b.spent[k] === i + 1 ? i : i + 1;   // tap the last spent token to un-spend it
     } else if (t.dataset.earn) {
       addLedger(num(t.dataset.earn), ''); return;
     } else if (t.dataset.helminfo) {
@@ -581,6 +648,42 @@
     save(); renderBattle();
   });
 
+  $('#view-battle').addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-spend], [data-bgact]')) {
+      e.preventDefault(); e.target.click();
+    }
+  });
+
+  // End Phase: clear all CMD tokens and activations, then start the next round.
+  // Never blocked; if battlegroups weren't marked activated, say so and offer Undo.
+  let undoBattle = null, toastTimer = null;
+  function nextRound() {
+    const b = B();
+    const unacted = b.bgs.filter((g) => g.status === 'in' && g.count > 0 && !g.act);
+    undoBattle = JSON.stringify(b);
+    b.round += 1;
+    b.helm = { seize: 0, jump: 0, tac: 0 };
+    b.spent = { jump: 0, tac: 0 };
+    b.bgs.forEach((g) => { g.act = false; g.msg = ''; });
+    save(); renderBattle();
+    showToast('Round ' + b.round + ' started.' + (unacted.length
+      ? ' Not marked activated: ' + unacted.map((g) => g.name || 'BG ' + g.id).join(', ') + '.' : ''), !!unacted.length);
+  }
+  function showToast(msg, warn) {
+    const t = $('#toast');
+    $('#toast-msg').textContent = msg;
+    t.classList.toggle('warn', warn);
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; undoBattle = null; }, warn ? 9000 : 4000);
+  }
+  $('#toast-undo').addEventListener('click', () => {
+    if (undoBattle) { state.battle = JSON.parse(undoBattle); save(); renderBattle(); }
+    undoBattle = null;
+    $('#toast').hidden = true;
+  });
+  $('#btn-next-round').addEventListener('click', nextRound);
+
   $('#b-earn-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const f = e.target;
@@ -598,6 +701,8 @@
     $('#req-count').textContent = reqCount;
     $('#req-cost').textContent = cost;
     $('#req-after').textContent = '(credits after: ' + signed(battleCredits() - cost) + ')';
+    const uc = utilityCheck(s, reqCount);
+    $('#req-warn').textContent = uc.over ? 'Over the utility ship limit: ' + uc.utes + ' of ' + uc.limit + ' allowed in play.' : '';
   }
   $('#btn-req').addEventListener('click', () => {
     const ships = B().nonCampaign ? SHIPS : SHIPS.filter(isOwned);

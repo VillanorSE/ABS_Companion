@@ -81,6 +81,10 @@
   <section class="view" id="view-unlocks" data-view="unlocks" hidden>
     <div class="avail-bar"><span>Capital available</span><b id="unl-avail">10</b></div>
     <p class="hint">Tick a ship class or competitive advantage when you buy it. Its cost comes out of your available capital.</p>
+    <details class="fold buynow" id="buynow" open>
+      <summary>Can buy now <span id="buynow-count"></span></summary>
+      <div id="buynow-list"></div>
+    </details>
     <h2 class="sect">Ship classes <span class="rt">Cost</span></h2>
     <p class="hint small">Tap a ship’s name to see its stats.</p>
     <div class="list" id="ship-checklist"></div>
@@ -109,7 +113,7 @@
 
     <h2 class="sect">Command helm <span class="rt" id="b-tokens"></span></h2>
     <div class="helm" id="b-helm"></div>
-    <p class="hint small">Tap a token to mark it spent. Tap ⌄ for the full rules. All tokens are cleared at the start of each new round.</p>
+    <p class="hint small">Tap a slot’s tokens to spend one. Tap an empty spot to refill it. Tap a name for its full rules. All tokens clear at the start of each round.</p>
 
     <h2 class="sect">Credits</h2>
     <div class="credits" id="b-credits-card">
@@ -136,8 +140,9 @@
     <h2 class="sect">Credit ledger</h2>
     <div id="b-ledger"></div>
 
+    <button class="btn primary wide next-round" type="button" id="btn-next-round">Next round →</button>
     <div class="btns two">
-      <button class="btn primary" type="button" id="btn-finish">Finish game → Log</button>
+      <button class="btn" type="button" id="btn-finish">Finish game → Log</button>
       <button class="btn danger" type="button" id="btn-discard">Discard game</button>
     </div>
   </section>
@@ -213,6 +218,7 @@
     </label>
     <label class="field"><span>Name (optional)</span><input type="text" name="name" placeholder="e.g. Alpha"></label>
     <p class="req-cost">Cost: <b id="req-cost">0</b> credits <span id="req-after"></span></p>
+    <p class="hint small warn" id="req-warn"></p>
     <div class="dlg-actions">
       <span class="spacer"></span>
       <button type="button" class="btn" id="btn-req-cancel">Cancel</button>
@@ -230,9 +236,12 @@
   </form>
 </dialog>
 
+<div class="toast" id="toast" role="status" hidden><span id="toast-msg"></span><button type="button" id="toast-undo">Undo</button></div>
+
 <script src="data.js"></script>
 <script src="rules.js"></script>
 <script src="contracts.js"></script>
+<script src="fleet.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
