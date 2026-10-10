@@ -413,3 +413,50 @@ button.mod.base{color:var(--accent);}
 .use-state{font-size:12px;font-weight:800;color:var(--good);white-space:nowrap;}
 .use.used{border-color:var(--line);opacity:.5;}
 .use.used .use-state{color:var(--muted);}
+
+/* 0.13: scale rule, purchase history, summaries, battlegroup stats, objects */
+.scale-rule{display:flex;flex-direction:column;gap:4px;margin-top:10px;}
+.scale-rule span{font-size:12px;color:var(--muted);font-weight:600;}
+.scale-rule select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px;font-size:15px;}
+#btn-same-contracts{margin-bottom:10px;font-size:14px;}
+.buys{margin:-2px 0 10px 14px;padding:8px 12px;border-left:3px solid var(--accent);background:var(--surface);border-radius:0 10px 10px 0;}
+.buys-h{display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.buys-h span{color:var(--accent);}
+.buy-item{display:flex;justify-content:space-between;font-size:14px;padding:2px 0;}
+.buy-item small{color:var(--muted);}
+.sumbtn{grid-column:1 / 4;justify-self:start;background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;
+  font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px;margin-top:6px;}
+.sumbtn[aria-expanded="true"] .chev{transform:rotate(180deg);}
+.sum-wrap{grid-column:1 / 4;margin-top:8px;cursor:default;}
+.sum h4{margin:12px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);}
+.sum-head{display:flex;align-items:baseline;gap:10px;}
+.sum-head b{font-size:36px;font-weight:800;}
+.sum-head span{color:var(--muted);font-size:13px;}
+.sum-head.profit b{color:var(--good);}
+.sum-head.deficit b{color:var(--bad);}
+.sum-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;text-align:center;}
+.sum-tiles div{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 2px;}
+.sum-tiles b{display:block;font-size:18px;}
+.sum-tiles span{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.4px;}
+.pos{color:var(--good);}
+.neg{color:var(--bad);}
+.sum-contracts{font-size:13px;color:#c9d2e6;margin:8px 0 0;}
+.rrow{display:grid;grid-template-columns:28px 1fr auto;gap:8px;align-items:center;font-size:13px;margin:4px 0;}
+.rl{color:var(--muted);font-weight:700;}
+.rbars{display:flex;flex-direction:column;gap:2px;}
+.bar{display:block;height:6px;border-radius:3px;min-width:2px;}
+.bar.earn{background:var(--good);}
+.bar.spend{background:var(--bad);}
+.rv{font-variant-numeric:tabular-nums;white-space:nowrap;}
+.bg-stats{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:13px;color:var(--muted);}
+.bg-stats b{color:var(--text);}
+.bg-stats .w{flex-basis:100%;color:#c9d2e6;}
+.bg-stats .kind{font-style:normal;font-size:9px;font-weight:800;text-transform:uppercase;border-radius:3px;padding:1px 4px;margin-right:6px;vertical-align:1px;}
+.bg-stats .kind.pri{background:var(--pri);color:#1b1300;}
+.bg-stats .kind.aux{background:var(--aux);color:#04202e;}
+.obj-scale{display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);padding:8px 12px;margin:6px 0 12px;font-weight:700;}
+.obj-scale .stepper{width:130px;}
+#object-cards{display:grid;gap:12px;}
+@media (min-width:700px){ #object-cards{grid-template-columns:repeat(2,minmax(0,1fr));} }
+.seg button{padding:9px 4px;}

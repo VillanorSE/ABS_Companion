@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.12.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.13.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -15,6 +15,8 @@
       games: [],               // {scale,date,opp,win,credits,rep,boughtRep,purchases,notes}
       summary: { finalScale: '', finalRep: '', finalCapital: '', winner: '' },
       notes: DEFAULT_HOUSE_RULES,
+      scaleRule: '',           // '' keep scale; 'N' raise by 1 every N games at the current scale
+      purchases: [],           // {id, cost, afterGame, date}: unlocks bought, for the capital history
       battle: blankBattle(),
     };
   }
@@ -205,8 +207,7 @@
   $('#buynow-list').addEventListener('click', (e) => {
     const b = e.target.closest('[data-buy]');
     if (!b) return;
-    state.unlocked[b.dataset.buy] = true;
-    save(); renderUnlocks(); renderStatus(); renderShips(); renderBattle();
+    setUnlocked(b.dataset.buy, true);
   });
 
   function setOpen(btn, body, open) {
@@ -230,22 +231,45 @@
       setOpen(ab, body, body.hidden);
     }
   });
+  function unlockCost(id) {
+    const s = SHIPS.find((x) => x.id === id);
+    return s ? s.cost : ALL_ADVS.find((a) => a.id === id).lvl;
+  }
+  // Buy or un-buy an unlock, keeping a dated record of when it was bought (after which game).
+  function setUnlocked(id, on) {
+    state.purchases = state.purchases || [];
+    if (on) {
+      state.unlocked[id] = true;
+      state.purchases.push({ id, cost: unlockCost(id), afterGame: state.games.length, date: new Date().toISOString().slice(0, 10) });
+    } else {
+      delete state.unlocked[id];
+      const i = state.purchases.map((p) => p.id).lastIndexOf(id);
+      if (i >= 0) state.purchases.splice(i, 1);
+    }
+    save(); renderUnlocks(); renderStatus(); renderShips(); renderBattle(); renderGames();
+  }
   document.addEventListener('change', (e) => {
     const id = e.target.dataset && e.target.dataset.unlock;
-    if (!id) return;
-    if (e.target.checked) state.unlocked[id] = true; else delete state.unlocked[id];
-    save();
-    renderUnlocks();
-    renderStatus();
-    renderShips();
-    renderBattle();
+    if (id) setUnlocked(id, e.target.checked);
   });
 
   // ---------- games ----------
   function renderGames() {
     const list = $('#game-list');
     $('#game-empty').hidden = state.games.length > 0;
-    list.innerHTML = state.games.map((g, i) => {
+    const unlockName = (id) => (SHIPS.find((x) => x.id === id) || ALL_ADVS.find((a) => a.id === id)).name;
+    const recorded = new Set((state.purchases || []).map((p) => p.id));
+    const undated = Object.keys(state.unlocked).filter((id) => !recorded.has(id));
+    const buys = (n) => {
+      const ps = (state.purchases || []).filter((p) => p.afterGame === n);
+      const extra = n === 0 ? undated.map((id) => ({ id, cost: unlockCost(id), undated: true })) : [];
+      const all = extra.concat(ps);
+      if (!all.length) return '';
+      const total = all.reduce((t, p) => t + p.cost, 0);
+      return `<div class="buys"><div class="buys-h">${n === 0 ? 'Bought before the first game' : 'Bought after game ' + n}<span>−${total} capital</span></div>
+        ${all.map((p) => `<div class="buy-item"><span>${esc(unlockName(p.id))}${p.undated && state.games.length ? ' <small>(date not recorded)</small>' : ''}</span><b>${p.cost}</b></div>`).join('')}</div>`;
+    };
+    list.innerHTML = buys(0) + state.games.map((g, i) => {
       const bits = [];
       if (g.scale !== '' && g.scale != null) bits.push('Scale ' + esc(g.scale));
       if (g.credits) bits.push(esc(g.credits) + ' credits');
@@ -259,7 +283,9 @@
         ${g.win ? `<span class="res ${esc(g.win)}">${esc(g.win)}</span>` : '<span></span>'}
         <span class="meta">${bits.join(' · ') || 'Tap to edit'}</span>
         ${extra ? `<div class="extra">${esc(extra)}</div>` : ''}
-      </div>`;
+        ${g.summary ? `<button type="button" class="sumbtn" data-sum="${i}" aria-expanded="false">Game summary ${CHEVRON}</button>
+          <div class="sum-wrap" hidden>${summaryHtml(g.summary)}</div>` : ''}
+      </div>${buys(i + 1)}`;
     }).join('');
   }
 
@@ -267,6 +293,7 @@
   const form = $('#game-form');
   let editing = -1;
   let fromBattle = false;    // saving this dialog finishes the current Battle
+  let pendingSummary = null; // post-game summary to store with the logged game
   let repTouched = false;    // stop auto-suggesting rep once the player edits it
 
   function openGame(i, prefill) {
@@ -289,6 +316,14 @@
 
   $('#btn-add-game').addEventListener('click', () => openGame(-1));
   $('#game-list').addEventListener('click', (e) => {
+    const sb = e.target.closest('[data-sum]');
+    if (sb) {
+      const w = sb.nextElementSibling;
+      w.hidden = !w.hidden;
+      sb.setAttribute('aria-expanded', String(!w.hidden));
+      return;
+    }
+    if (e.target.closest('.sum-wrap')) return;
     const card = e.target.closest('[data-game]');
     if (card) openGame(+card.dataset.game);
   });
@@ -309,17 +344,28 @@
       if (!el.name) return;
       g[el.name] = el.type === 'checkbox' ? el.checked : el.value.trim();
     });
-    if (editing >= 0) state.games[editing] = g;
-    else {
+    if (editing >= 0) {
+      const old = state.games[editing];
+      if (old.summary) g.summary = old.summary;
+      if (old.contracts) g.contracts = old.contracts;
+      state.games[editing] = g;
+    } else {
+      if (fromBattle && pendingSummary) { g.summary = pendingSummary; g.contracts = pendingSummary.contracts; }
       state.games.push(g);
-      // Campaign Scale goes up by 1 after each campaign game, to a maximum of 10.
-      const played = num(g.scale) || num(state.campScale) || 3;
-      state.campScale = String(Math.min(10, Math.max(num(state.campScale), played + 1)));
-      renderBound();
+      applyScaleRule();
     }
     if (fromBattle) { state.battle = blankBattle(); renderBattle(); showTab('log'); }
     save(); closeGame(); renderGames(); renderStatus();
   });
+  // Optional: raise the campaign scale after every N games played at the current scale.
+  function applyScaleRule() {
+    const n = num(state.scaleRule);
+    const cur = num(state.campScale) || 3;
+    if (!n || cur >= 10) return;
+    const atScale = state.games.filter((x) => num(x.scale) === cur).length;
+    if (atScale >= n) { state.campScale = String(cur + 1); renderBound(); }
+  }
+
   function suggestRep() {
     if (repTouched) return;
     const won = form.elements.win.value === 'Win';
@@ -409,8 +455,12 @@
     $('#cnt-mine').textContent = '(' + mine.length + ')';
     $('#cnt-all').textContent = '(' + SHIPS.length + ')';
     $$('[data-shipfilter]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.shipfilter === prefs.shipFilter)));
-    const list = prefs.shipFilter === 'all' ? SHIPS : mine;
+    const objects = prefs.shipFilter === 'objects';
+    $('#objects-view').hidden = !objects;
+    $$('[data-ships-only]').forEach((el) => { el.hidden = objects; });
+    const list = objects ? [] : prefs.shipFilter === 'all' ? SHIPS : mine;
     $('#ship-cards').innerHTML = list.map(shipCard).join('');
+    if (objects) renderObjects();
 
     const advs = ALL_ADVS.filter((a) => state.unlocked[a.id]);
     $('#cnt-advs').textContent = '(' + advs.length + ')';
@@ -423,6 +473,31 @@
       : '<p class="none">No competitive advantages bought yet.</p>';
     $$('.adv-full', ownedList).forEach((el) => { el.hidden = true; });
   }
+  // Independent ships and objects, with Ⓢ values worked out at a chosen scale.
+  let objScale = null;
+  function scaleText(str, n) {
+    return String(str).replace(/Ⓢ\/3/g, Math.ceil(n / 3)).replace(/Ⓢ\/2/g, Math.ceil(n / 2)).replace(/Ⓢ/g, n)
+      .replace(/\((\d+)\)D/g, '$1D');
+  }
+  function renderObjects() {
+    const n = objScale || num(state.battle && state.battle.scale) || num(state.campScale) || 3;
+    $('#obj-scale').textContent = n;
+    $('#object-note').textContent = OBJECT_NOTE;
+    $('#object-cards').innerHTML = OBJECTS.map((o) => `<article class="card obj">
+      <header><div class="title"><h3>${esc(o.name)}</h3><div class="cls">${esc(o.kind)} · ${esc(o.from)}</div></div></header>
+      <div class="stats">${['Mass', 'Move', 'Silhouette', 'Shields'].map((l, i) => `<div><b>${esc(scaleText(o.stats[i], n))}</b><span>${l}</span></div>`).join('')}</div>
+      ${o.weapons ? `<div class="weap">${o.weapons.map((w) => weaponRow(w.kind, Object.assign({}, w, { dice: scaleText(w.dice, n) }))).join('')}</div>` : ''}
+      <ul class="rules">${o.notes.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+    </article>`).join('');
+  }
+  $('#objects-view').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-objscale]');
+    if (!b) return;
+    const cur = objScale || num(state.battle && state.battle.scale) || num(state.campScale) || 3;
+    objScale = Math.min(10, Math.max(1, cur + num(b.dataset.objscale)));
+    renderObjects();
+  });
+
   $$('[data-shipfilter]').forEach((b) => b.addEventListener('click', () => {
     prefs.shipFilter = b.dataset.shipfilter; savePrefs(); renderShips();
   }));
@@ -585,11 +660,16 @@
         <div class="bg-top">
           <div class="bg-main" ${canAct ? `data-bgact="${g.id}" role="button" tabindex="0" aria-pressed="${!!g.act}"` : ''}>
             <b>${esc(g.name || 'BG ' + g.id)}</b> · ${start}× ${esc(s.name)}
-            <small>Round ${g.round} · ${start * s.cost} cr · Sil ${sil} · Shields ${f.shields} · Ⓜ${s.mass}</small>
+            <small>Round ${g.round} · ${start * s.cost} cr · Ⓜ${s.mass}</small>
             ${canAct ? `<span class="act-chip">${g.act ? '✓ Activated' : 'Tap to mark activated'}</span>` : ''}
           </div>
           <button type="button" class="status" data-bgstatus="${g.id}">${STATUS[g.status]}</button>
           <button type="button" class="x" data-bgdel="${g.id}" aria-label="Remove battlegroup">×</button>
+        </div>
+        <div class="bg-stats">
+          <span>Thrust <b>${f.thrust == null ? '–' : f.thrust + '″'}</b></span><span>Sil <b>${f.sil}</b></span><span>Shields <b>${f.shields}</b></span><span>Jump <b>${f.jump}″</b></span>
+          ${f.pri ? `<span class="w"><i class="kind pri">pri</i>${esc(f.pri.name)} ${esc(f.pri.range)} · <b>${esc(f.pri.dice)}</b> · dmg ${f.pri.dmg}</span>` : ''}
+          ${f.aux ? `<span class="w"><i class="kind aux">aux</i>${esc(f.aux.name)} ${esc(f.aux.range)} · <b>${esc(f.aux.dice)}</b> · dmg ${f.aux.dmg}</span>` : ''}
         </div>
         <div class="bg-track">
           <div class="trk">
@@ -613,6 +693,10 @@
     $('#b-tables').textContent = picked.length ? tables + ' table' + (tables > 1 ? 's' : '') + ' · jump point limit ' + (tables + 1) : '';
     $('#btn-contracts').textContent = picked.length ? 'Change contracts (' + picked.length + ')' : 'Choose contracts';
     $('#b-contracts').innerHTML = picked.map(contractCard).join('');
+    const last = [...state.games].reverse().find((g) => g.contracts && g.contracts.length);
+    const same = $('#btn-same-contracts');
+    same.hidden = b.nonCampaign || !last || (b.contracts || []).join() === last.contracts.join();
+    if (last) same.textContent = 'Same contracts as last game (' + last.contracts.map((id) => CONTRACTS.find((c) => c.id === id).name).join(', ') + ')';
 
     // ledger, newest round first
     const rounds = [...new Set(b.ledger.map((e) => e.round))].sort((x, y) => y - x);
@@ -796,6 +880,13 @@
       </div>`).join('');
     ctDlg.showModal();
   });
+  $('#btn-same-contracts').addEventListener('click', () => {
+    const last = [...state.games].reverse().find((g) => g.contracts && g.contracts.length);
+    if (!last) return;
+    B().contracts = last.contracts.slice();
+    save(); renderBattle();
+  });
+
   // Rulebook method: shuffle the twelve picture cards and reveal until three different suits appear.
   $('#btn-draw-contracts').addEventListener('click', () => {
     const deck = CONTRACTS.slice();
@@ -823,13 +914,58 @@
       if (!confirm('End this non-campaign game and clear the Battle tab?')) return;
       state.battle = blankBattle(); save(); renderBattle(); return;
     }
-    const fleet = b.bgs.map((g) => { const st = g.start || g.count; return `${g.name || 'BG ' + g.id}: ${st}× ${shipById(g.ship).name} (R${g.round}, ${st - g.count} lost, ${STATUS[g.status].toLowerCase()})`; });
-    openGame(-1, {
-      scale: battleScale(),
-      credits: String(battleCredits()),
-      notes: [b.round + ' rounds.' + (b.contracts && b.contracts.length ? ' Contracts: ' + b.contracts.map((id) => CONTRACTS.find((c) => c.id === id).name).join(', ') + '.' : ''), ...fleet].join('\n'),
-    });
+    pendingSummary = buildSummary();
+    $('#summary-body').innerHTML = summaryHtml(pendingSummary);
+    $('#summary-dialog').showModal();
   });
+  $('#summary-back').addEventListener('click', () => { pendingSummary = null; $('#summary-dialog').close(); });
+  $('#summary-log').addEventListener('click', () => {
+    const s = pendingSummary;
+    $('#summary-dialog').close();
+    openGame(-1, { scale: s.scale, credits: String(s.credits), notes: s.rounds + ' rounds.' });
+  });
+
+  // Snapshot of the finished battle, stored with the logged game.
+  function buildSummary() {
+    const b = B();
+    const rounds = [];
+    let total = 0;
+    for (let r = 1; r <= b.round; r++) {
+      const es = b.ledger.filter((e) => e.round === r);
+      const earned = es.filter((e) => e.amt > 0).reduce((t, e) => t + e.amt, 0);
+      const spent = es.filter((e) => e.amt < 0).reduce((t, e) => t - e.amt, 0);
+      total += earned - spent;
+      rounds.push({ round: r, earned, spent, total });
+    }
+    const fleet = b.bgs.map((g) => {
+      const s = shipById(g.ship), start = g.start || g.count;
+      return { name: g.name || 'BG ' + g.id, ship: s.name, count: start, lost: start - g.count, cost: start * s.cost, round: g.round, status: g.status };
+    });
+    return {
+      scale: battleScale(), rounds: b.round, credits: battleCredits(),
+      earned: rounds.reduce((t, r) => t + r.earned, 0), spent: rounds.reduce((t, r) => t + r.spent, 0),
+      byRound: rounds, fleet, contracts: (b.contracts || []).slice(),
+    };
+  }
+
+  function summaryHtml(s) {
+    const max = Math.max(1, ...s.byRound.map((r) => Math.max(r.earned, r.spent)));
+    const bar = (v, cls) => `<span class="bar ${cls}" style="width:${(v / max) * 100}%"></span>`;
+    const shipsBought = s.fleet.reduce((t, g) => t + g.count, 0), shipsLost = s.fleet.reduce((t, g) => t + g.lost, 0);
+    return `<div class="sum">
+      <div class="sum-head ${s.credits > 0 ? 'profit' : s.credits < 0 ? 'deficit' : ''}">
+        <b>${signed(s.credits)}</b><span>${s.credits > 0 ? 'Profit' : s.credits < 0 ? 'Deficit' : 'Break even'} · ${s.rounds} round${s.rounds === 1 ? '' : 's'} · Scale ${s.scale}</span></div>
+      <div class="sum-tiles"><div><b class="pos">+${s.earned}</b><span>Revenue</span></div><div><b class="neg">−${s.spent}</b><span>Spent</span></div>
+        <div><b>${shipsBought}</b><span>Ships bought</span></div><div><b class="${shipsLost ? 'neg' : ''}">${shipsLost}</b><span>Ships lost</span></div></div>
+      ${s.contracts && s.contracts.length ? `<p class="sum-contracts">Contracts: ${s.contracts.map((id) => { const c = CONTRACTS.find((x) => x.id === id); return c.rank + c.suit + ' ' + esc(c.name); }).join(' · ')}</p>` : ''}
+      <h4>Credits by round</h4>
+      <div class="rounds">${s.byRound.map((r) => `<div class="rrow"><span class="rl">R${r.round}</span>
+        <div class="rbars">${bar(r.earned, 'earn')}${bar(r.spent, 'spend')}</div>
+        <span class="rv"><span class="pos">+${r.earned}</span> <span class="neg">−${r.spent}</span> = <b>${signed(r.total)}</b></span></div>`).join('')}</div>
+      ${s.fleet.length ? `<h4>Fleet</h4><table class="ctab"><thead><tr><th>Battlegroup</th><th>Rd</th><th>Cost</th><th>Lost</th></tr></thead><tbody>
+        ${s.fleet.map((g) => `<tr><td>${esc(g.name)} · ${g.count}× ${esc(g.ship)}</td><td>${g.round}</td><td>${g.cost}</td><td class="${g.lost ? 'neg' : ''}">${g.lost}</td></tr>`).join('')}</tbody></table>` : ''}
+    </div>`;
+  }
   $('#btn-discard').addEventListener('click', () => {
     if (!confirm('Discard this game’s round, helm, battlegroups and credits?')) return;
     state.battle = blankBattle(); save(); renderBattle();

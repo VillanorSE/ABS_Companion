@@ -126,3 +126,33 @@ const CONTRACTS = [
     timing: [['End of tactical phase', 'Every kraken activates: 1) targets the highest-cost ship within 12″ (closest ship if none within 12″; random if tied); 2) moves directly towards it, ending as close as possible; 3) suffers passive attacks; 4) attacks that ship’s battlegroup, if in range.']],
     revenue: [['▲', 'Utility ship battlegroup scans a friendly jump point or jumps out', 'You may reveal one ♦ card per Kraken Heart carried and gain revenue from each. Discard the hearts and the revealed cards.']] },
 ];
+
+// Independent ships and objects quick reference (ship sheet object table, contract cards, errata).
+// Stats use Ⓢ formulas and are shown at the chosen scale. stats: [Mass, Move, Silhouette, Shields]
+const OBJECTS = [
+  { name: 'Space Kraken', kind: 'Independent ship', from: 'Whaling (K♦)', stats: ['Ⓢ/3', '9″', 'Ⓢ', 'Ⓢ/2'],
+    weapons: [{ kind: 'pri', name: 'Mouth Parts', range: '0″–3″', dice: '(Ⓢ/2)D10', dmg: 3 }, { kind: 'aux', name: 'Tentacles', range: '0″–3″', dice: 'ⓈD6', dmg: 1 }],
+    notes: ['End of tactical phase, every kraken activates: targets the highest-cost ship within 12″ (closest ship if none; random if tied), moves directly toward it ending as close as possible, suffers passive attacks, then attacks that ship’s battlegroup if in range.',
+            'First scan draws a ♦ card. Destroyed: place a Kraken Heart within 2″.'] },
+  { name: 'Criminal ship', kind: 'Independent ship', from: 'Patrol (Q♠)', stats: ['Ⓢ/3', '12″', 'Ⓢ', 'Ⓢ/2'],
+    weapons: [{ kind: 'aux', name: 'Blasters', range: '0″–6″', dice: '2D6', dmg: 1 }],
+    notes: ['A revealed suspicious ship. Moves toward the public jump point it didn’t arrive from and jumps out if within jump range. Destroy it to score ♠ revenue.'] },
+  { name: 'Suspicious / civilian ship', kind: 'Independent ship', from: 'Patrol (Q♠)', stats: ['Ⓢ/3', '8″', 'Ⓢ', '0'],
+    notes: ['Scan: roll a D3 per scanning ship in range (+1 D3 per Recon Wing ship); any result ≤ the Round number reveals it as a criminal ship. Destroying a suspicious ship loses 5 credits.'] },
+  { name: 'Facility', kind: 'Stationary object', from: 'Demolition (K♠), Quarantine (K♥), Counter-Intelligence (K♣)', stats: ['Ⓢ/3', '—', 'Ⓢ', 'Ⓢ/2'],
+    weapons: [{ kind: 'aux', name: 'Laser Turrets (360°)', range: '0″–6″', dice: '(Ⓢ/2)D6', dmg: 1 }],
+    notes: ['Demolition facilities count as Mass 3 at any Scale. One shared set of facilities if several facility contracts are active.'] },
+  { name: 'Container ship', kind: 'Independent ship', from: 'Industrial Espionage (J♣)', stats: ['2', '4″', '5', '3'],
+    notes: ['Uses the Medium Utility Ship profile. Escorted by the CEO with the most ships within 3″. Destroying one loses 5 credits.'] },
+  { name: 'Lifeboat', kind: 'Independent ship', from: 'Evacuation (J♥)', stats: ['1', '4″', 'Ⓢ', '0'],
+    notes: ['Scan with a non-lifeboat ship and no enemy ships within 3″ of it to take control; it acts as its own battlegroup. Destroying one loses 5 credits.'] },
+  { name: 'Asteroid', kind: 'Stationary object', from: 'Mining (Q♦)', stats: ['2', '—', '9', '0'],
+    notes: ['Counts as dangerous space; measure to its nearest edge. Destroyed: reveal a ♦ card and place that many Ore tokens.'] },
+  { name: 'Jump point', kind: 'Stationary object', from: 'Every game', stats: ['3', '—', '5', '6'],
+    notes: ['Shields 6 per errata. Limit: number of tables + 1 per CEO. Public jump points (Patrol) can’t be damaged.'] },
+  { name: 'Planetoid', kind: 'Stationary object', from: 'Evacuation, Supply, Shipping', stats: ['—', '—', '—', '—'],
+    notes: ['4″–12″ across, no Silhouette, dangerous space. No jump points or jumping in within 10″; a battlegroup with any ship within 10″ can’t jump-hop or jump out.'] },
+  { name: 'ComSat', kind: 'Stationary object', from: 'Infowar (J♠)', stats: ['—', '—', '—', '—'],
+    notes: ['No Silhouette, so it can’t be attacked. Scan to hack it (one CEO at a time).'] },
+];
+const OBJECT_NOTE = 'Uncontrolled ships and objects must make passive attacks if able; any CEO may roll them (FAQ). Ⓢ/2 and Ⓢ/3 round up.';

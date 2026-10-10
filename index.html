@@ -43,7 +43,17 @@
       <div class="tile calc"><span class="lab">Games played</span><span class="big" id="st-games">0</span><span class="note">Games in the log</span></div>
       <div class="tile calc"><span class="lab">Total capital earned</span><span class="big" id="st-total">10</span><span class="note">10 + sum of game Scales</span></div>
       <div class="tile calc"><span class="lab">Available to spend</span><span class="big" id="st-avail">10</span><span class="note">Earned − unlocks − bought rep</span></div>
-      <label class="tile span2"><span class="lab">Current campaign scale <small>(starts at 3; goes up by 1 when you log a game, max 10)</small></span><input class="big" type="number" inputmode="numeric" min="1" max="10" placeholder="3" data-bind="campScale"></label>
+      <div class="tile span2">
+        <label><span class="lab">Current campaign scale <small>(campaign rules start at 3, max 10)</small></span><input class="big" type="number" inputmode="numeric" min="1" max="10" placeholder="3" data-bind="campScale"></label>
+        <label class="scale-rule"><span>After logging a game</span>
+          <select data-bind="scaleRule">
+            <option value="">Keep the scale (change it yourself)</option>
+            <option value="1">Raise by 1 every game</option>
+            <option value="2">Raise by 1 every 2 games</option>
+            <option value="3">Raise by 1 every 3 games</option>
+          </select>
+        </label>
+      </div>
     </div>
 
     <details class="group fold">
@@ -110,6 +120,7 @@
 
     <h2 class="sect">Contracts <span class="rt" id="b-tables"></span></h2>
     <button class="btn wide" type="button" id="btn-contracts">Choose contracts</button>
+    <button class="btn wide" type="button" id="btn-same-contracts" hidden></button>
     <div id="b-contracts"></div>
 
     <h2 class="sect">Command helm <span class="rt" id="b-tokens"></span></h2>
@@ -158,6 +169,7 @@
     <button class="btn primary wide" id="btn-add-game" type="button">+ Log a game</button>
     <div id="game-list"></div>
     <p class="empty" id="game-empty">No games logged yet. Each game’s Scale is added to your capital.</p>
+    <p class="hint small">Unlocks you buy are recorded after the most recent game, so this log doubles as your capital history.</p>
   </section>
 
   <!-- STATS (ship reference cards) -->
@@ -166,14 +178,22 @@
       <div class="seg" role="tablist" aria-label="Which ships to show">
         <button type="button" role="tab" data-shipfilter="mine" aria-selected="true">My fleet <span id="cnt-mine"></span></button>
         <button type="button" role="tab" data-shipfilter="all" aria-selected="false">All ships <span id="cnt-all"></span></button>
+        <button type="button" role="tab" data-shipfilter="objects" aria-selected="false">Objects</button>
       </div>
     </div>
-    <details class="fold advs-owned" id="advs-owned">
+    <div id="objects-view" hidden>
+      <div class="obj-scale"><span>Stats at scale</span>
+        <div class="stepper sm"><button type="button" data-objscale="-1" aria-label="Lower scale">−</button><b id="obj-scale">3</b><button type="button" data-objscale="1" aria-label="Raise scale">+</button></div>
+      </div>
+      <div id="object-cards"></div>
+      <p class="legend" id="object-note"></p>
+    </div>
+    <details class="fold advs-owned" id="advs-owned" data-ships-only>
       <summary>My competitive advantages <span id="cnt-advs"></span></summary>
       <div id="advs-owned-list"></div>
     </details>
     <div id="ship-cards"></div>
-    <p class="legend">Primary weapons fire in a 45° front arc; auxiliary weapons in a 180° front arc. Jump range is 6−Ⓜ″. WZ marks ship classes from the Warzone supplement. Mother’s wing radius is Ⓜ″.</p>
+    <p class="legend" data-ships-only>Primary weapons fire in a 45° front arc; auxiliary weapons in a 180° front arc. Jump range is 6−Ⓜ″. WZ marks ship classes from the Warzone supplement. Mother’s wing radius is Ⓜ″.</p>
   </section>
 
 </main>
@@ -241,6 +261,13 @@
     <div id="contract-picks"></div>
     <div class="dlg-actions"><span class="spacer"></span><button class="btn primary" value="done">Done</button></div>
   </form>
+</dialog>
+
+<dialog id="summary-dialog">
+  <h3>Game summary</h3>
+  <div id="summary-body"></div>
+  <div class="dlg-actions"><button type="button" class="btn" id="summary-back">Back to battle</button><span class="spacer"></span>
+    <button type="button" class="btn primary" id="summary-log">Log this game →</button></div>
 </dialog>
 
 <dialog id="round-dialog">
