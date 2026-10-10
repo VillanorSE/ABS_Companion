@@ -39,7 +39,7 @@ const CONTRACTS = [
               ['▲', 'Destroy a facility with an AI Core', 'Gain half that revenue (round up), discard the card, then the facility explodes.']] },
 
   { id: 'J♥', rank: 'J', suit: '♥', name: 'Evacuation', extraTable: false, page: 'p.46',
-    setup: '1 ♥ planetoid · Ⓢ lifeboats (set aside).', deck: 'Descending: Ace to Ⓢ, face up, highest on top.',
+    setup: '1 ♥ planetoid · Ⓢ lifeboats (set aside).', deck: 'Descending: Ⓢ to Ace, face up, highest on top.',
     objects: [['Lifeboat', '1', '4″', 'Ⓢ', '0']],
     notes: ['Independent ships.', PLANETOID],
     inPlay: [['Scan a lifeboat', 'With a non-lifeboat ship, and only if no enemy ships are within 3″ of it: take control of it. It acts as its own battlegroup in your fleet.']],
@@ -49,7 +49,7 @@ const CONTRACTS = [
     revenue: [['▲', 'A lifeboat under your control jumps out', 'Gain revenue from the top ♥ card, then discard it.'], ['▼', 'Destroy a lifeboat', 'Lose 5 credits.']] },
 
   { id: 'Q♥', rank: 'Q', suit: '♥', name: 'Supply', extraTable: false, page: 'p.47', usesMass: true,
-    setup: '1 ♥ planetoid.', deck: 'Descending: Ace to Ⓢ, face up, highest on top.',
+    setup: '1 ♥ planetoid.', deck: 'Descending: Ⓢ to Ace, face up, highest on top.',
     notes: [PLANETOID],
     inPlay: [['Scan the ♥ planetoid with a utility ship battlegroup', 'Place a Docked token on it. A docked battlegroup can’t move but may use Red Alert; discard the token at the start of its activation to undock.'],
              ['Scan the ♥ planetoid with a docked utility ship battlegroup', 'Each ship in the battlegroup within scan range places Ⓜ of your Supply tokens on the planetoid.']],
@@ -59,7 +59,7 @@ const CONTRACTS = [
               ['»', 'Repeat', 'Continue until no CEO has enough tokens. A CEO may score more than once a round, but must let every other CEO try before scoring again.']] },
 
   { id: 'K♥', rank: 'K', suit: '♥', name: 'Quarantine', extraTable: true, page: 'p.47–48',
-    setup: 'Ⓢ facilities, all infected. (One shared set if other facility contracts are active.)', deck: 'Descending: Ace to Ⓢ, face up, highest on top.',
+    setup: 'Ⓢ facilities, all infected. (One shared set if other facility contracts are active.)', deck: 'Descending: Ⓢ to Ace, face up, highest on top.',
     objects: [['Facility', 'Ⓢ/3', '—', 'Ⓢ', 'Ⓢ/2']], weapons: [TURRETS],
     notes: ['Turrets have a 360° arc. ' + UNCONTROLLED],
     inPlay: [['Scan an infected facility (Contagion)', 'Whatever its type, the scanning battlegroup immediately suffers a 2D6 (damage 1) passive attack. The active CEO chooses the order of this and any Medical Team effect.'],

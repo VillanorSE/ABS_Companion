@@ -1,5 +1,5 @@
 // Offline cache. Bump VERSION whenever app files change so phones pick up the update.
-const VERSION = 'abs-companion-v5';
+const VERSION = 'abs-companion-v6';
 const FILES = ['./', 'index.html', 'app.css', 'app.js', 'data.js', 'rules.js', 'contracts.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 

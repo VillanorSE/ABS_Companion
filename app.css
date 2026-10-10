@@ -350,3 +350,12 @@ textarea.notes{min-height:200px;}
 .pick-suit h4{margin:12px 0 4px;color:var(--muted);font-size:13px;}
 .pick{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer;}
 .pick small{color:var(--muted);}
+
+/* v4: helm title chevron, clickable contracts */
+.slot-title{flex:1;background:none;border:0;padding:4px 0;text-align:left;font-weight:700;font-size:16px;cursor:pointer;
+  display:flex;align-items:center;gap:2px;}
+.slot-title .chev{width:20px;height:20px;}
+.slot-title[aria-expanded="true"] .chev{transform:rotate(180deg);}
+.contract{cursor:pointer;}
+.contract:focus-visible{outline:2px solid var(--blue);outline-offset:2px;}
+.contract header .chevbtn{pointer-events:none;}

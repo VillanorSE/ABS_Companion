@@ -388,11 +388,11 @@
       ${c.objects.map((o) => `<tr><td>${esc(o[0])}</td>${o.slice(1).map((v) => `<td>${esc(atScale(v))}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '';
     const weps = c.weapons ? `<table class="ctab"><thead><tr><th>Weapon</th><th>Range</th><th>Dice</th><th>Dmg</th></tr></thead><tbody>
       ${c.weapons.map((w) => `<tr><td>${esc(w.name)}</td><td>${esc(w.range)}</td><td>${esc(atScale(w.dice))}</td><td>${w.dmg}</td></tr>`).join('')}</tbody></table>` : '';
-    return `<article class="contract suit-${'SHCD'['♠♥♣♦'.indexOf(c.suit)]} ${open ? 'open' : ''}">
+    return `<article class="contract suit-${'SHCD'['♠♥♣♦'.indexOf(c.suit)]} ${open ? 'open' : ''}" data-contract="${esc(c.id)}" role="button" tabindex="0" aria-expanded="${open}">
       <header>
         <span class="rank">${c.rank}<i>${c.suit}</i></span>
         <div class="ct"><b>${esc(c.name)}</b><small>${c.extraTable ? '+1 table · ' : ''}${esc(c.setup)}</small></div>
-        <button type="button" class="chevbtn" data-contract="${esc(c.id)}" aria-expanded="${open}" aria-label="${esc(c.name)} details">${CHEVRON}</button>
+        <span class="chevbtn" aria-hidden="true">${CHEVRON}</span>
       </header>
       <div class="expand-body" ${open ? '' : 'hidden'}>
         <p class="scaleline">At Scale ${n}: Ⓢ = ${n} · Ⓢ/2 = ${Math.ceil(n / 2)} · Ⓢ/3 = ${Math.ceil(n / 3)}${c.usesMass ? ' · Ⓜ = Mass of the ship class' : ''}</p>
@@ -443,8 +443,7 @@
       const sub = s.key === 'seize' ? `Initiative roll-off: <b>${seizeDie(n)}</b>` : `${n - spent} left`;
       const open = helmOpen.has(s.key);
       return `<div class="slot slot-${s.key} ${open ? 'open' : ''}">
-        <div class="slot-h"><b>${s.name}</b><span>${sub}</span>
-          <button type="button" class="chevbtn" data-helminfo="${s.key}" aria-expanded="${open}" aria-label="${s.name} rules">${CHEVRON}</button></div>
+        <div class="slot-h"><button type="button" class="slot-title" data-helminfo="${s.key}" aria-expanded="${open}">${s.name}${CHEVRON}</button><span>${sub}</span></div>
         <div class="slot-body">
           <div class="pips">${pips || '<span class="nopip">No tokens</span>'}</div>
           <div class="stepper sm"><button type="button" data-helm="${s.key}" data-d="-1" aria-label="Remove token from ${s.name}">−</button><b>${n}</b><button type="button" data-helm="${s.key}" data-d="1" aria-label="Add token to ${s.name}">+</button></div>
@@ -521,7 +520,19 @@
     save(); renderBattle();
   }
 
+  function toggleContract(card) {
+    const k = card.dataset.contract;
+    if (contractOpen.has(k)) contractOpen.delete(k); else contractOpen.add(k);
+    renderBattle();
+  }
+  $('#b-contracts').addEventListener('keydown', (e) => {
+    const card = e.target.closest('[data-contract]');
+    if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleContract(card); }
+  });
+
   $('#view-battle').addEventListener('click', (e) => {
+    const card = e.target.closest('[data-contract]');
+    if (card) { toggleContract(card); return; }
     const t = e.target.closest('button');
     if (!t) return;
     const b = B();
@@ -546,10 +557,6 @@
     } else if (t.dataset.helminfo) {
       const k = t.dataset.helminfo;
       if (helmOpen.has(k)) helmOpen.delete(k); else helmOpen.add(k);
-      renderBattle(); return;
-    } else if (t.dataset.contract) {
-      const k = t.dataset.contract;
-      if (contractOpen.has(k)) contractOpen.delete(k); else contractOpen.add(k);
       renderBattle(); return;
     } else if (t.dataset.bgdmg) {
       damageBg(b.bgs.find((x) => x.id === +t.dataset.bgdmg), num(t.dataset.d));
