@@ -13,6 +13,14 @@ const ADV_REQS = {
   adv_54: 'only0', adv_55: 'MI0', adv_56: 'MI0', adv_57: 'MI0,MI1', adv_58: 'MI0,MI1|HE2', adv_59: 'MI0,MI1,MI2|DI3', adv_60: 'MI0,MI1,MI2|AG3',
 };
 
+// Advantages with a limited number of uses, tracked on the Battle tab.
+const ONCE_PER = [
+  { id: 'adv_31', per: 'game', what: 'End Phase: remove 1 damage from every friendly battlegroup' },
+  { id: 'adv_53', per: 'game', what: 'Reveal two contract cards, keep either' },
+  { id: 'adv_21', per: 'round', what: 'One battlegroup may Go Rogue repeatedly' },
+  { id: 'adv_52', per: 'round', what: 'First jump point deployed refunds a Jump In token' },
+];
+
 // Which owned advantages to list under each helm slot's rules.
 const HELM_ADVS = {
   seize: ['adv_28', 'adv_32'],

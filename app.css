@@ -402,3 +402,14 @@ button.mod.base{color:var(--accent);}
 .tile.flash{animation:flash 1.2s ease-out;}
 @keyframes flash{0%{background:var(--accent);}100%{background:var(--surface);}}
 .version-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 2px 8px;color:var(--muted);font-size:14px;}
+
+/* 0.12: contract draw, limited-use advantages */
+#btn-draw-contracts{margin:4px 0 6px;}
+.uses{display:grid;gap:8px;}
+.use{display:flex;align-items:center;gap:10px;text-align:left;background:var(--surface);border:1px solid var(--good);
+  border-radius:var(--radius);padding:10px 12px;cursor:pointer;}
+.use-name{flex:1;font-weight:700;}
+.use-name small{display:block;font-weight:400;color:var(--muted);font-size:12px;}
+.use-state{font-size:12px;font-weight:800;color:var(--good);white-space:nowrap;}
+.use.used{border-color:var(--line);opacity:.5;}
+.use.used .use-state{color:var(--muted);}

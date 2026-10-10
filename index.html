@@ -43,7 +43,7 @@
       <div class="tile calc"><span class="lab">Games played</span><span class="big" id="st-games">0</span><span class="note">Games in the log</span></div>
       <div class="tile calc"><span class="lab">Total capital earned</span><span class="big" id="st-total">10</span><span class="note">10 + sum of game Scales</span></div>
       <div class="tile calc"><span class="lab">Available to spend</span><span class="big" id="st-avail">10</span><span class="note">Earned − unlocks − bought rep</span></div>
-      <label class="tile span2"><span class="lab">Current campaign scale <small>(starts at 3, +1 per game, max 10)</small></span><input class="big" type="number" inputmode="numeric" min="1" max="10" placeholder="3" data-bind="campScale"></label>
+      <label class="tile span2"><span class="lab">Current campaign scale <small>(starts at 3; goes up by 1 when you log a game, max 10)</small></span><input class="big" type="number" inputmode="numeric" min="1" max="10" placeholder="3" data-bind="campScale"></label>
     </div>
 
     <details class="group fold">
@@ -115,6 +115,11 @@
     <h2 class="sect">Command helm <span class="rt" id="b-tokens"></span></h2>
     <div class="helm" id="b-helm"></div>
     <p class="hint small">Tap a slot’s tokens to spend one. Tap an empty spot to refill it. Tap a name for its full rules. All tokens clear at the start of each round.</p>
+
+    <div id="b-uses-wrap" hidden>
+      <h2 class="sect">Limited-use advantages</h2>
+      <div class="uses" id="b-uses"></div>
+    </div>
 
     <h2 class="sect">Credits</h2>
     <div class="credits" id="b-credits-card">
@@ -232,6 +237,7 @@
   <form method="dialog" id="contract-form">
     <h3>Contracts in this game</h3>
     <p class="hint small">Normally three, one per suit (Jack, Queen or King of each suit).</p>
+    <button type="button" class="btn wide" id="btn-draw-contracts">🎲 Draw 3 at random</button>
     <div id="contract-picks"></div>
     <div class="dlg-actions"><span class="spacer"></span><button class="btn primary" value="done">Done</button></div>
   </form>

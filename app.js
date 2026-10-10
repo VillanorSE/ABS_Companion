@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.11.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.12.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -27,8 +27,9 @@
       bgs: [],                 // {id, ship, count, round, name, status: 'in'|'out'|'dead'}
       ledger: [],              // {round, amt, note, bg}
       nextBg: 1,
-      nonCampaign: false,
-      contracts: [],         // contract ids, e.g. 'J♠'    // one-off game: all ship classes, no campaign advantages, not logged
+      nonCampaign: false,      // one-off game: all ship classes, no campaign advantages, not logged
+      contracts: [],           // contract ids, e.g. 'J♠'
+      advUsed: {},             // once-per-game/round advantages used, e.g. { adv_31: true }
     };
   }
 
@@ -308,7 +309,14 @@
       if (!el.name) return;
       g[el.name] = el.type === 'checkbox' ? el.checked : el.value.trim();
     });
-    if (editing >= 0) state.games[editing] = g; else state.games.push(g);
+    if (editing >= 0) state.games[editing] = g;
+    else {
+      state.games.push(g);
+      // Campaign Scale goes up by 1 after each campaign game, to a maximum of 10.
+      const played = num(g.scale) || num(state.campScale) || 3;
+      state.campScale = String(Math.min(10, Math.max(num(state.campScale), played + 1)));
+      renderBound();
+    }
     if (fromBattle) { state.battle = blankBattle(); renderBattle(); showTab('log'); }
     save(); closeGame(); renderGames(); renderStatus();
   });
@@ -543,6 +551,17 @@
       </div>`;
     }).join('');
 
+    // once-per-game / once-per-round advantages
+    const uses = ONCE_PER.filter((u) => battleHas(u.id));
+    $('#b-uses-wrap').hidden = !uses.length;
+    $('#b-uses').innerHTML = uses.map((u) => {
+      const used = !!(b.advUsed && b.advUsed[u.id]);
+      const a = ALL_ADVS.find((x) => x.id === u.id);
+      return `<button type="button" class="use ${used ? 'used' : ''}" data-use="${u.id}" aria-pressed="${used}">
+        <span class="use-name">${esc(a.name)}<small>${esc(u.what)}</small></span>
+        <span class="use-state">${used ? 'Used' : u.per === 'game' ? 'Once per game' : 'Once per round'}</span></button>`;
+    }).join('');
+
     // credits
     const cr = battleCredits();
     $('#b-credits').textContent = signed(cr);
@@ -661,6 +680,9 @@
       const k = t.dataset.helminfo;
       if (helmOpen.has(k)) helmOpen.delete(k); else helmOpen.add(k);
       renderBattle(); return;
+    } else if (t.dataset.use) {
+      b.advUsed = b.advUsed || {};
+      if (b.advUsed[t.dataset.use]) delete b.advUsed[t.dataset.use]; else b.advUsed[t.dataset.use] = true;
     } else if (t.dataset.bgdmg) {
       damageBg(b.bgs.find((x) => x.id === +t.dataset.bgdmg), num(t.dataset.d));
     } else if (t.dataset.bgships) {
@@ -705,6 +727,7 @@
     b.helm = { seize: 0, jump: 0, tac: 0 };
     b.spent = { jump: 0, tac: 0 };
     b.bgs.forEach((g) => { g.act = false; g.msg = ''; });
+    ONCE_PER.filter((u) => u.per === 'round').forEach((u) => { if (b.advUsed) delete b.advUsed[u.id]; });
     save(); renderBattle();
     // After the dialog returns focus to the Next round button, jump back to the top of the tab.
     if (document.activeElement) document.activeElement.blur();
@@ -772,6 +795,19 @@
           <span><b>${c.rank}${c.suit}</b> ${esc(c.name)}${c.extraTable ? ' <small>+1 table</small>' : ''}</span></label>`).join('')}
       </div>`).join('');
     ctDlg.showModal();
+  });
+  // Rulebook method: shuffle the twelve picture cards and reveal until three different suits appear.
+  $('#btn-draw-contracts').addEventListener('click', () => {
+    const deck = CONTRACTS.slice();
+    for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
+    const picked = [];
+    for (const c of deck) {
+      if (!picked.some((p) => p.suit === c.suit)) picked.push(c);
+      if (picked.length === 3) break;
+    }
+    B().contracts = picked.map((c) => c.id);
+    save(); renderBattle();
+    $$('#contract-picks input').forEach((i) => { i.checked = B().contracts.includes(i.value); });
   });
   $('#contract-picks').addEventListener('change', () => {
     B().contracts = $$('#contract-picks input:checked').map((i) => i.value);
