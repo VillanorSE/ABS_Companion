@@ -460,3 +460,17 @@ button.mod.base{color:var(--accent);}
 #object-cards{display:grid;gap:12px;}
 @media (min-width:700px){ #object-cards{grid-template-columns:repeat(2,minmax(0,1fr));} }
 .seg button{padding:9px 4px;}
+
+/* 0.14: rivals */
+.rival-btns{margin-top:0;}
+.standings{margin-top:10px;}
+.standing .rank-n{font-weight:800;color:var(--muted);min-width:18px;text-align:center;}
+.standing .rep-n{font-size:22px;font-weight:800;color:var(--accent);text-align:center;line-height:1;}
+.standing .rep-n small{display:block;font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;}
+.standing.me{background:rgba(45,67,115,.35);}
+.chev-spacer{width:36px;flex:none;}
+.rival-body p{margin:6px 0;}
+.rival-banner{display:flex;align-items:center;gap:10px;background:rgba(197,140,242,.12);border:1px solid var(--wz);
+  border-radius:var(--radius);padding:10px 12px;margin:6px 0 12px;}
+.rival-banner > div{flex:1;min-width:0;}
+.rival-banner small{display:block;color:var(--muted);font-size:12px;margin-top:2px;}

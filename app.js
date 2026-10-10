@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.13.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.14.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -17,6 +17,7 @@
       notes: DEFAULT_HOUSE_RULES,
       scaleRule: '',           // '' keep scale; 'N' raise by 1 every N games at the current scale
       purchases: [],           // {id, cost, afterGame, date}: unlocks bought, for the capital history
+      rivals: {},              // corpId -> shared corporation file from another player
       battle: blankBattle(),
     };
   }
@@ -56,6 +57,9 @@
     st.houseRulesAdded = true;
   }
   if (!state.houseRulesAdded) { addHouseRules(state); store(STORE_KEY, state); }
+  // Stable id for this corporation, so rivals' copies of it update instead of duplicating.
+  if (!state.corpId) { state.corpId = newId(); store(STORE_KEY, state); }
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   const prefs = load(PREFS_KEY, { tab: 'overview', shipFilter: 'mine' });
   prefs.tab = { campaign: 'overview', games: 'log', ships: 'stats', more: 'overview' }[prefs.tab] || prefs.tab;   // renamed tabs
 
@@ -108,6 +112,7 @@
     $('#hdr-rep-val').textContent = rep;
     $('#st-games').textContent = state.games.length;
     $('#hdr-corp').textContent = state.corp || 'Unnamed corporation';
+    renderStandings();
   }
 
   // Campaign reputation: win +1, positive final credits +1 (entered per game), +1 per 10 capital spent on rep.
@@ -412,8 +417,16 @@
   // Your advantages apply to your own (unlocked) ship classes.
   const campaignHas = (id) => !!state.unlocked[id];
 
-  function shipCard(s) {
-    const owned = isOwned(s);
+  // ctx describes whose fleet: which classes they own and which advantages apply.
+  const MY_FLEET = { owns: (s) => isOwned(s), has: (id) => !!state.unlocked[id], whose: 'your' };
+  function rivalFleet(r) {
+    const set = new Set(r.unlocked || []);
+    return { owns: (s) => s.always || set.has(s.id), has: (id) => set.has(id), whose: 'their' };
+  }
+
+  function shipCard(s, ctx) {
+    ctx = ctx || MY_FLEET;
+    const owned = ctx.owns(s);
     const cls = s.mass === 0 ? 'Wing' : /Utility/.test(s.name) ? 'Utility ship' : /Carrier/.test(s.name) ? 'Carrier' : 'Warship';
     const tag = s.always ? '<span class="badge free">FREE</span>' : owned ? '<span class="badge own">OWNED</span>' : '';
     return `<article class="card ${owned ? '' : 'locked'}">
@@ -424,13 +437,14 @@
         </div>
         <div class="costtag"><b>${s.cost}</b><span>Credits</span></div>
       </header>
-      ${shipBody(s)}
+      ${shipBody(s, ctx)}
     </article>`;
   }
 
-  function shipBody(s) {
-    const owned = isOwned(s);
-    const f = fleetStats(s, owned ? campaignHas : () => false);
+  function shipBody(s, ctx) {
+    ctx = ctx || MY_FLEET;
+    const owned = ctx.owns(s);
+    const f = fleetStats(s, owned ? ctx.has : () => false);
     const advNames = [...f.applied].map((id) => ALL_ADVS.find((a) => a.id === id).name);
     return `<div class="stats">
         <div><b>${s.mass}</b><span>Mass</span></div>
@@ -446,7 +460,7 @@
         <span>Explodes <b>${f.explode ? 'D6 ≤ ' + modVal(f.explode, s.mass) : 'never'}</b></span>
         ${owned || s.always ? '' : `<span>Unlock <b>${s.cost} capital</b></span>`}
       </div>
-      ${advNames.length ? `<p class="applied">Includes your advantages: ${advNames.map(esc).join(', ')}</p>` : ''}
+      ${advNames.length ? `<p class="applied">Includes ${ctx.whose} advantages: ${advNames.map(esc).join(', ')}</p>` : ''}
       ${s.rules.length ? `<ul class="rules">${s.rules.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}`;
   }
 
@@ -458,8 +472,22 @@
     const objects = prefs.shipFilter === 'objects';
     $('#objects-view').hidden = !objects;
     $$('[data-ships-only]').forEach((el) => { el.hidden = objects; });
-    const list = objects ? [] : prefs.shipFilter === 'all' ? SHIPS : mine;
-    $('#ship-cards').innerHTML = list.map(shipCard).join('');
+    const rival = /^rival:/.test(prefs.shipFilter) && (state.rivals || {})[prefs.shipFilter.slice(6)];
+    if (/^rival:/.test(prefs.shipFilter) && !rival) prefs.shipFilter = 'mine';
+    const banner = $('#rival-banner');
+    banner.hidden = !rival;
+    $$('[data-ships-only]').forEach((el) => { if (rival && el.id === 'advs-owned') el.hidden = true; });
+    if (rival) {
+      const ctx = rivalFleet(rival);
+      const advs = ALL_ADVS.filter((a) => ctx.has(a.id));
+      banner.innerHTML = `<div><b>${esc(rival.corp || 'Unnamed corporation')}</b>’s fleet${rival.ceo ? ' · ' + esc(rival.ceo) : ''}
+        <small>Shared ${esc((rival.sharedAt || '').slice(0, 10))} · Advantages: ${advs.length ? advs.map((a) => esc(a.name)).join(', ') : 'none'}</small></div>
+        <button type="button" class="btn sm" data-shipfilter-set="mine">Back to my fleet</button>`;
+      $('#ship-cards').innerHTML = SHIPS.filter(ctx.owns).map((s) => shipCard(s, ctx)).join('');
+    } else {
+      const list = objects ? [] : prefs.shipFilter === 'all' ? SHIPS : mine;
+      $('#ship-cards').innerHTML = list.map((s) => shipCard(s)).join('');
+    }
     if (objects) renderObjects();
 
     const advs = ALL_ADVS.filter((a) => state.unlocked[a.id]);
@@ -496,6 +524,10 @@
     const cur = objScale || num(state.battle && state.battle.scale) || num(state.campScale) || 3;
     objScale = Math.min(10, Math.max(1, cur + num(b.dataset.objscale)));
     renderObjects();
+  });
+
+  $('#rival-banner').addEventListener('click', (e) => {
+    if (e.target.closest('[data-shipfilter-set]')) { prefs.shipFilter = 'mine'; savePrefs(); renderShips(); }
   });
 
   $$('[data-shipfilter]').forEach((b) => b.addEventListener('click', () => {
@@ -1019,6 +1051,7 @@
     if (!f) return;
     try {
       const data = JSON.parse(await f.text());
+      if (data && data.type === SHARE_TYPE) { addRivals([data]); setStatus('That was a rival’s shared corporation, so it was added to Rivals.'); return; }
       if (typeof data !== 'object' || !data || !('unlocked' in data)) throw new Error('not a backup');
       if (!confirm('Replace the current campaign with "' + f.name + '"?')) return;
       replaceState(data);
@@ -1066,6 +1099,112 @@
     if (!confirm('Clear the whole campaign on this device? Export a backup first if you want to keep it.')) return;
     replaceState(blankState());
     setStatus('Campaign reset.');
+  });
+
+  // ---------- rivals (shared corporation files) ----------
+  const SHARE_TYPE = 'abs-companion-corp';
+  function sharePayload() {
+    const c = capital();
+    return {
+      type: SHARE_TYPE, version: 1, sharedAt: new Date().toISOString(), app: APP_VERSION,
+      corpId: state.corpId, corp: state.corp, ceo: state.ceo, rep: reputation(), campScale: state.campScale,
+      capital: { total: c.total, avail: c.avail }, unlocked: Object.keys(state.unlocked),
+      games: state.games.map((g) => ({ scale: g.scale, opp: g.opp, win: g.win, credits: g.credits, rep: g.rep, boughtRep: !!g.boughtRep, date: g.date })),
+      purchases: state.purchases || [],
+    };
+  }
+  function rivalStatus(msg, err) { const el = $('#rival-status'); el.textContent = msg; el.classList.toggle('err', !!err); }
+
+  $('#btn-share-corp').addEventListener('click', async () => {
+    const name = safeName() + '_ABS_share.json';
+    const file = new File([JSON.stringify(sharePayload())], name, { type: 'application/json' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: (state.corp || 'My corporation') + ' — A Billion Suns' });
+        rivalStatus('Shared. Your rivals can add it with “Add rival from file”.');
+        return;
+      }
+    } catch (err) { if (err && err.name === 'AbortError') return; }
+    download(name, JSON.stringify(sharePayload()), 'application/json');
+    rivalStatus('Saved ' + name + '. Send it to your rivals.');
+  });
+
+  $('#btn-add-rival').addEventListener('click', () => $('#file-rival').click());
+  $('#file-rival').addEventListener('change', async (e) => {
+    const files = [...e.target.files]; e.target.value = '';
+    const ok = [];
+    for (const f of files) {
+      try { const d = JSON.parse(await f.text()); if (d && d.type === SHARE_TYPE) ok.push(d); } catch (err) { /* skip */ }
+    }
+    if (!ok.length) { rivalStatus('That isn’t a shared corporation file. Ask your rival to use “Share my corporation”.', true); return; }
+    addRivals(ok);
+  });
+
+  function addRivals(list) {
+    state.rivals = state.rivals || {};
+    const names = [];
+    let own = false;
+    list.forEach((d) => {
+      if (d.corpId === state.corpId) { own = true; return; }
+      const id = d.corpId || newId();
+      const prev = state.rivals[id];
+      if (prev && prev.sharedAt > d.sharedAt) return;   // keep the newer copy
+      state.rivals[id] = Object.assign({}, d, { corpId: id, importedAt: new Date().toISOString() });
+      names.push((prev ? 'Updated ' : 'Added ') + (d.corp || 'Unnamed corporation'));
+    });
+    save(); renderStandings();
+    rivalStatus(names.length ? names.join(', ') + '.' : own ? 'That’s your own corporation.' : 'Nothing new in that file.', !names.length);
+  }
+
+  const rivalOpen = new Set();
+  function renderStandings() {
+    const c = capital();
+    const me = { corpId: state.corpId, corp: state.corp, ceo: state.ceo, rep: reputation(), games: state.games, capital: { total: c.total }, me: true };
+    const rivals = Object.values(state.rivals || {});
+    const rows = [me].concat(rivals).sort((a, b) => (b.rep || 0) - (a.rep || 0) || (b.capital?.total || 0) - (a.capital?.total || 0));
+    if (!rivals.length) { $('#standings').innerHTML = ''; return; }
+    const nameOf = (id) => (SHIPS.find((x) => x.id === id) || ALL_ADVS.find((a) => a.id === id) || {}).name;
+    $('#standings').innerHTML = `<div class="list standings">${rows.map((r, i) => {
+      const open = rivalOpen.has(r.corpId);
+      const ships = r.me ? [] : SHIPS.filter((s) => s.always || (r.unlocked || []).includes(s.id)).map((s) => s.name);
+      const advs = r.me ? [] : ALL_ADVS.filter((a) => (r.unlocked || []).includes(a.id)).map((a) => 'L' + a.lvl + ' ' + a.name);
+      const games = (r.games || []);
+      const wins = games.filter((g) => g.win === 'Win').length;
+      return `<div class="item-wrap standing ${r.me ? 'me' : ''} ${open ? 'open' : ''}">
+        <div class="item">
+          <span class="rank-n">${i + 1}</span>
+          <span class="name">${esc(r.corp || 'Unnamed corporation')}${r.me ? ' <span class="badge own">YOU</span>' : ''}
+            <small>${r.ceo ? esc(r.ceo) + ' · ' : ''}${games.length} game${games.length === 1 ? '' : 's'} · ${wins} win${wins === 1 ? '' : 's'} · ${r.capital ? r.capital.total : 0} capital earned</small></span>
+          <span class="rep-n">${r.rep || 0}<small>rep</small></span>
+          ${r.me ? '<span class="chev-spacer"></span>' : `<button type="button" class="chevbtn" data-rival="${esc(r.corpId)}" aria-expanded="${open}" aria-label="Details for ${esc(r.corp || 'rival')}">${CHEVRON}</button>`}
+        </div>
+        ${r.me ? '' : `<div class="expand-body rival-body" ${open ? '' : 'hidden'}>
+          <p class="hint small">Shared ${esc((r.sharedAt || '').slice(0, 10))}. Ask them to share again for the latest.</p>
+          <p><b>Ship classes:</b> ${ships.map(esc).join(', ')}</p>
+          <p><b>Advantages:</b> ${advs.length ? advs.map(esc).join(', ') : 'none'}</p>
+          ${games.length ? `<p><b>Recent games:</b> ${games.slice(-3).reverse().map((g) => [g.opp ? 'vs ' + g.opp : '', g.win, g.credits !== '' && g.credits != null ? g.credits + ' cr' : ''].filter(Boolean).map(esc).join(' ')).join(' · ')}</p>` : ''}
+          <div class="btns two"><button type="button" class="btn" data-rival-fleet="${esc(r.corpId)}">View their fleet stats</button>
+            <button type="button" class="btn danger" data-rival-del="${esc(r.corpId)}">Remove</button></div>
+        </div>`}
+      </div>`;
+    }).join('')}</div>`;
+  }
+  $('#standings').addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    if (t.dataset.rival) {
+      const k = t.dataset.rival;
+      if (rivalOpen.has(k)) rivalOpen.delete(k); else rivalOpen.add(k);
+      renderStandings();
+    } else if (t.dataset.rivalFleet) {
+      prefs.shipFilter = 'rival:' + t.dataset.rivalFleet; savePrefs();
+      renderShips(); showTab('stats');
+    } else if (t.dataset.rivalDel) {
+      const r = state.rivals[t.dataset.rivalDel];
+      if (!confirm('Remove ' + (r.corp || 'this rival') + ' from your rivals?')) return;
+      delete state.rivals[t.dataset.rivalDel];
+      save(); renderStandings(); renderShips();
+    }
   });
 
   // ---------- boot ----------

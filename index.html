@@ -56,6 +56,16 @@
       </div>
     </div>
 
+    <h2 class="sect">Rivals</h2>
+    <p class="hint small">Share your corporation as a file (Messages, Discord, email…). Add the files your rivals send you to compare standings and see their fleets.</p>
+    <div class="btns two rival-btns">
+      <button class="btn primary" type="button" id="btn-share-corp">Share my corporation</button>
+      <button class="btn" type="button" id="btn-add-rival">Add rival from file</button>
+    </div>
+    <input type="file" id="file-rival" accept=".json,application/json" multiple hidden>
+    <p class="status" id="rival-status" role="status"></p>
+    <div id="standings"></div>
+
     <details class="group fold">
       <summary>Campaign summary (end of campaign)</summary>
       <div class="row2">
@@ -181,6 +191,7 @@
         <button type="button" role="tab" data-shipfilter="objects" aria-selected="false">Objects</button>
       </div>
     </div>
+    <div class="rival-banner" id="rival-banner" hidden></div>
     <div id="objects-view" hidden>
       <div class="obj-scale"><span>Stats at scale</span>
         <div class="stepper sm"><button type="button" data-objscale="-1" aria-label="Lower scale">−</button><b id="obj-scale">3</b><button type="button" data-objscale="1" aria-label="Raise scale">+</button></div>
