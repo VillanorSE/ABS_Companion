@@ -175,20 +175,20 @@
       .map((a) => ({ id: a.id, name: a.name, cost: a.lvl, kind: 'L' + a.lvl + ' ' + a.tree }));
     const row = (o, buy) => `<div class="buy-row ${buy ? '' : 'later'}"><span class="bn">${esc(o.name)}<small>${esc(o.kind)}</small></span>
       <span class="cost">${o.cost}</span>${buy ? `<button type="button" class="btn sm" data-buy="${o.id}">Buy</button>` : ''}</div>`;
-    let canCount = 0;
-    const group = (title, items, note) => {
-      items.sort((x, y) => x.cost - y.cost);
-      const can = items.filter((o) => o.cost <= avail), later = items.filter((o) => o.cost > avail);
-      canCount += can.length;
-      return `<div class="buy-group"><h4>${title}</h4>
-        ${can.length ? can.map((o) => row(o, true)).join('') : '<p class="none">Nothing affordable right now.</p>'}
-        ${later.length ? `<p class="later-h">Need more capital</p>${later.map((o) => row(o, false)).join('')}` : ''}
-        ${note ? `<p class="hint small">${note}</p>` : ''}</div>`;
-    };
-    const html = group('Ship classes', ships) +
-      group('Competitive advantages', advs, 'Only one Level 0 advantage, and you may research one advantage per campaign game.');
-    $('#buynow-count').textContent = '(' + canCount + ')';
-    $('#buynow-list').innerHTML = html;
+    const byCost = (x, y) => x.cost - y.cost;
+    const split = (items) => [items.filter((o) => o.cost <= avail).sort(byCost), items.filter((o) => o.cost > avail).sort(byCost)];
+    const [shipsNow, shipsLater] = split(ships), [advsNow, advsLater] = split(advs);
+    const group = (title, items, buy, empty) => `<div class="buy-group ${buy ? '' : 'later-group'}"><h4>${title}</h4>
+      ${items.length ? items.map((o) => row(o, buy)).join('') : `<p class="none">${empty}</p>`}</div>`;
+    const later = shipsLater.length + advsLater.length;
+    $('#buynow-count').textContent = '(' + (shipsNow.length + advsNow.length) + ')';
+    $('#buynow-list').innerHTML =
+      group('Ship classes', shipsNow, true, 'No ship classes affordable right now.') +
+      group('Competitive advantages', advsNow, true, 'No advantages available right now.') +
+      (later ? `<p class="later-h">Need more capital</p>` +
+        (shipsLater.length ? group('Ship classes', shipsLater, false) : '') +
+        (advsLater.length ? group('Competitive advantages', advsLater, false) : '') : '') +
+      '<p class="hint small">Only one Level 0 advantage, and you may research one advantage per campaign game.</p>';
   }
   $('#buynow-list').addEventListener('click', (e) => {
     const b = e.target.closest('[data-buy]');
@@ -312,20 +312,31 @@
   form.elements.credits.addEventListener('input', suggestRep);
 
   // ---------- ship cards ----------
-  // A stat changed by an advantage shows its difference from the printed value, e.g. 2 (+1).
+  // A stat changed by an advantage shows the modified value in green; tapping it
+  // switches to the printed value plus the change, e.g. "5" <-> "4 (+1)".
   const sgn = (d) => (d > 0 ? '+' : '−') + Math.abs(d);
-  const delta = (txt) => `<sup class="delta">(${txt})</sup>`;
-  const modVal = (val, base, unit) => `${val}${unit || ''}${val !== base ? delta(sgn(val - base)) : ''}`;
-  function rangeDelta(range, base) {
-    if (!base || range === base) return '';
+  const modBtn = (shown, alt) => `<button type="button" class="mod" data-alt="${esc(alt)}" aria-label="${esc(shown)}, printed ${esc(alt)}. Tap to switch.">${esc(shown)}</button>`;
+  const modVal = (val, base, unit) => (val !== base
+    ? modBtn(val + (unit || ''), base + (unit || '') + ' (' + sgn(val - base) + ')') : `${val}${unit || ''}`);
+  function rangeVal(range, base) {
+    if (!base || range === base) return esc(range);
     const a = /(\d+)\D+(\d+)/.exec(range), b = /(\d+)\D+(\d+)/.exec(base);
     const dMin = a[1] - b[1], dMax = a[2] - b[2];
-    return delta(dMin === dMax ? sgn(dMax) : dMin === 0 ? sgn(dMax) + ' max' : sgn(dMin) + '/' + sgn(dMax));
+    const d = dMin === dMax ? sgn(dMax) : dMin === 0 ? sgn(dMax) + ' max' : sgn(dMin) + '/' + sgn(dMax);
+    return modBtn(range, base + ' (' + d + ')');
   }
+  document.addEventListener('click', (e) => {
+    const m = e.target.closest('button.mod');
+    if (!m) return;
+    const now = m.textContent;
+    m.textContent = m.dataset.alt;
+    m.dataset.alt = now;
+    m.classList.toggle('base');
+  });
 
   function weaponRow(kind, w) {
     if (!w) return `<div class="wrow none"><span class="kind ${kind}">${kind}</span><span class="wn">None</span><span></span></div>`;
-    const range = esc(w.range) + rangeDelta(w.range, w.baseRange);
+    const range = rangeVal(w.range, w.baseRange);
     return `<div class="wrow">
       <span class="kind ${kind}">${kind}</span>
       <span class="wn">${esc(w.name)}${w.note ? `<small>${esc(w.note)}</small>` : ''}</span>
