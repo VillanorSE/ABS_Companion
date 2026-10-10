@@ -57,6 +57,24 @@
         <label class="field"><span>Campaign winner</span><input type="text" data-bind="summary.winner"></label>
       </div>
     </details>
+  
+    <h2 class="sect">Notes / house rules</h2>
+    <textarea class="notes" data-bind="notes" rows="10" placeholder="Additional notes, house rules…"></textarea>
+
+    <h2 class="sect">Backup &amp; transfer</h2>
+    <p class="hint">Your campaign is saved on this device automatically. Export a backup file to move it to another phone or keep it safe.</p>
+    <div class="btns">
+      <button class="btn" type="button" id="btn-export">Export backup (.json)</button>
+      <button class="btn" type="button" id="btn-import">Import backup</button>
+      <button class="btn" type="button" id="btn-import-html">Import saved tracker (.html)</button>
+      <button class="btn danger" type="button" id="btn-reset">Reset campaign</button>
+    </div>
+    <input type="file" id="file-json" accept=".json,application/json" hidden>
+    <input type="file" id="file-html" accept=".html,.htm,text/html" hidden>
+    <p class="status" id="more-status" role="status"></p>
+
+    <h2 class="sect">About</h2>
+    <p class="hint">An unofficial companion for <i>A Billion Suns</i> by Mike Hutchinson (Osprey Games). Ship data from the Ship Classes sheet and the Warzone rules supplement. WZ marks Warzone ship classes.</p>
   </section>
 
   <!-- UNLOCKS -->
@@ -64,8 +82,10 @@
     <div class="avail-bar"><span>Capital available</span><b id="unl-avail">10</b></div>
     <p class="hint">Tick a ship class or competitive advantage when you buy it. Its cost comes out of your available capital.</p>
     <h2 class="sect">Ship classes <span class="rt">Cost</span></h2>
+    <p class="hint small">Tap a ship’s name to see its stats.</p>
     <div class="list" id="ship-checklist"></div>
     <h2 class="sect">Competitive advantages</h2>
+    <p class="hint small">Tap ⌄ on an advantage to read its full rules.</p>
     <div id="adv-checklist"></div>
   </section>
 
@@ -83,9 +103,13 @@
       </div>
     </div>
 
+    <h2 class="sect">Contracts <span class="rt" id="b-tables"></span></h2>
+    <button class="btn wide" type="button" id="btn-contracts">Choose contracts</button>
+    <div id="b-contracts"></div>
+
     <h2 class="sect">Command helm <span class="rt" id="b-tokens"></span></h2>
     <div class="helm" id="b-helm"></div>
-    <p class="hint small">Tap a token to mark it spent. All tokens are cleared at the start of each new round.</p>
+    <p class="hint small">Tap a token to mark it spent. Tap ⌄ for the full rules. All tokens are cleared at the start of each new round.</p>
 
     <h2 class="sect">Credits</h2>
     <div class="credits" id="b-credits-card">
@@ -105,6 +129,7 @@
     </div>
 
     <h2 class="sect">Battlegroups <span class="rt warn" id="b-util"></span></h2>
+    <details class="fold rulebox"><summary>Damage &amp; losses rules</summary><p id="b-dmg-rules"></p></details>
     <button class="btn primary wide" type="button" id="btn-req">+ Requisition battlegroup</button>
     <div id="b-bgs"></div>
 
@@ -124,8 +149,8 @@
     <p class="empty" id="game-empty">No games logged yet. Each game’s Scale is added to your capital.</p>
   </section>
 
-  <!-- SHIPS -->
-  <section class="view" id="view-ships" data-view="ships" hidden>
+  <!-- STATS (ship reference cards) -->
+  <section class="view" id="view-stats" data-view="stats" hidden>
     <div class="controls">
       <div class="seg" role="tablist" aria-label="Which ships to show">
         <button type="button" role="tab" data-shipfilter="mine" aria-selected="true">My fleet <span id="cnt-mine"></span></button>
@@ -140,35 +165,14 @@
     <p class="legend">Primary weapons fire in a 45° front arc; auxiliary weapons in a 180° front arc. Jump range is 6−Ⓜ″. WZ marks ship classes from the Warzone supplement. Mother’s wing radius is Ⓜ″.</p>
   </section>
 
-  <!-- MORE -->
-  <section class="view" id="view-more" data-view="more" hidden>
-    <h2 class="sect">Notes / house rules</h2>
-    <textarea class="notes" data-bind="notes" rows="10" placeholder="Additional notes, house rules…"></textarea>
-
-    <h2 class="sect">Backup &amp; transfer</h2>
-    <p class="hint">Your campaign is saved on this device automatically. Export a backup file to move it to another phone or keep it safe.</p>
-    <div class="btns">
-      <button class="btn" type="button" id="btn-export">Export backup (.json)</button>
-      <button class="btn" type="button" id="btn-import">Import backup</button>
-      <button class="btn" type="button" id="btn-import-html">Import saved tracker (.html)</button>
-      <button class="btn danger" type="button" id="btn-reset">Reset campaign</button>
-    </div>
-    <input type="file" id="file-json" accept=".json,application/json" hidden>
-    <input type="file" id="file-html" accept=".html,.htm,text/html" hidden>
-    <p class="status" id="more-status" role="status"></p>
-
-    <h2 class="sect">About</h2>
-    <p class="hint">An unofficial companion for <i>A Billion Suns</i> by Mike Hutchinson (Osprey Games). Ship data from the Ship Classes sheet and the Warzone rules supplement. WZ marks Warzone ship classes.</p>
-  </section>
 </main>
 
 <nav class="tabbar" aria-label="Sections">
   <button type="button" data-tab="overview" aria-current="page"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Overview</span></button>
-  <button type="button" data-tab="unlocks"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0"/></svg><span>Unlocks</span></button>
   <button type="button" data-tab="battle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v5M12 18v5M1 12h5M18 12h5"/></svg><span>Battle</span></button>
+  <button type="button" data-tab="stats"><svg viewBox="0 0 24 24"><path d="M12 2 4 20l8-4 8 4z"/></svg><span>Stats</span></button>
+  <button type="button" data-tab="unlocks"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0"/></svg><span>Unlocks</span></button>
   <button type="button" data-tab="log"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span>Log</span></button>
-  <button type="button" data-tab="ships"><svg viewBox="0 0 24 24"><path d="M12 2 4 20l8-4 8 4z"/></svg><span>Ships</span></button>
-  <button type="button" data-tab="more"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>More</span></button>
 </nav>
 
 <dialog id="game-dialog">
@@ -217,7 +221,18 @@
   </form>
 </dialog>
 
+<dialog id="contract-dialog">
+  <form method="dialog" id="contract-form">
+    <h3>Contracts in this game</h3>
+    <p class="hint small">Normally three, one per suit (Jack, Queen or King of each suit).</p>
+    <div id="contract-picks"></div>
+    <div class="dlg-actions"><span class="spacer"></span><button class="btn primary" value="done">Done</button></div>
+  </form>
+</dialog>
+
 <script src="data.js"></script>
+<script src="rules.js"></script>
+<script src="contracts.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

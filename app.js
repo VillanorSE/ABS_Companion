@@ -26,7 +26,8 @@
       bgs: [],                 // {id, ship, count, round, name, status: 'in'|'out'|'dead'}
       ledger: [],              // {round, amt, note, bg}
       nextBg: 1,
-      nonCampaign: false,    // one-off game: all ship classes, no campaign advantages, not logged
+      nonCampaign: false,
+      contracts: [],         // contract ids, e.g. 'J♠'    // one-off game: all ship classes, no campaign advantages, not logged
     };
   }
 
@@ -42,7 +43,7 @@
 
   let state = load(STORE_KEY, blankState());
   const prefs = load(PREFS_KEY, { tab: 'overview', shipFilter: 'mine' });
-  prefs.tab = { campaign: 'overview', games: 'log' }[prefs.tab] || prefs.tab;   // tabs renamed in v2
+  prefs.tab = { campaign: 'overview', games: 'log', ships: 'stats', more: 'overview' }[prefs.tab] || prefs.tab;   // renamed tabs
 
   let saveTimer = null;
   function save() {
@@ -117,29 +118,74 @@
   });
 
   // ---------- unlocks ----------
+  const CHEVRON = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+
+  function advDetail(a) {
+    const [req, text] = ADV_DETAILS[a.id];
+    return `<div class="expand-body adv-full">
+      <p class="req"><b>Requires:</b> ${esc(req)}</p>
+      <p>${esc(text)}</p>
+      ${/ or Level/.test(req) ? `<p class="hint small">${esc(ADV_FAQ_NOTE)}</p>` : ''}
+    </div>`;
+  }
+
   function renderUnlocks() {
+    // Ships: tap the name to show stats; only one open at a time.
     $('#ship-checklist').innerHTML = SHIPS.map((s) => {
       const on = isOwned(s);
-      return `<label class="item ${on ? 'on' : ''} ${s.always ? 'locked' : ''}">
-        <input type="checkbox" data-unlock="${s.id}" ${on ? 'checked' : ''} ${s.always ? 'disabled' : ''}>
-        <span class="name">${esc(s.name)}${s.wz ? '<span class="badge wz">WZ</span>' : ''}
-          ${s.always ? '<small>Always available</small>' : ''}</span>
-        <span class="cost">${s.always ? '–' : s.cost}</span>
-      </label>`;
+      return `<div class="item-wrap" data-ship-row="${s.id}">
+        <div class="item ${on ? 'on' : ''} ${s.always ? 'locked' : ''}">
+          <input type="checkbox" data-unlock="${s.id}" ${on ? 'checked' : ''} ${s.always ? 'disabled' : ''} aria-label="Unlock ${esc(s.name)}">
+          <button type="button" class="name namebtn" data-toggle-ship="${s.id}" aria-expanded="false">
+            ${esc(s.name)}${s.wz ? '<span class="badge wz">WZ</span>' : ''}${CHEVRON}
+            ${s.always ? '<small>Always available</small>' : ''}
+          </button>
+          <span class="cost">${s.always ? '–' : s.cost}</span>
+        </div>
+        <div class="expand-body ship-mini" hidden>${shipBody(s)}</div>
+      </div>`;
     }).join('');
 
+    // Advantages: chevron expands the full rules.
     $('#adv-checklist').innerHTML = ADVANTAGES.map((t) => `
       <div class="tree"><h3>${esc(t.tree)}</h3><div class="list">
         ${t.items.map(([id, lvl, name, desc]) => {
           const on = !!state.unlocked[id];
-          return `<label class="item ${on ? 'on' : ''}">
-            <input type="checkbox" data-unlock="${id}" ${on ? 'checked' : ''}>
-            <span class="name"><span class="lvl">L${lvl}</span>${esc(name)}<small>${esc(desc)}</small></span>
-            <span class="cost">${lvl}</span>
-          </label>`;
+          return `<div class="item-wrap">
+            <div class="item ${on ? 'on' : ''}">
+              <input type="checkbox" data-unlock="${id}" ${on ? 'checked' : ''} aria-label="Research ${esc(name)}">
+              <span class="name"><span class="lvl">L${lvl}</span>${esc(name)}<small>${esc(desc)}</small></span>
+              <span class="cost">${lvl}</span>
+              <button type="button" class="chevbtn" data-toggle-adv aria-expanded="false" aria-label="Full rules for ${esc(name)}">${CHEVRON}</button>
+            </div>
+            ${advDetail({ id })}
+          </div>`;
         }).join('')}
       </div></div>`).join('');
+    $$('#adv-checklist .adv-full').forEach((el) => { el.hidden = true; });
   }
+
+  function setOpen(btn, body, open) {
+    body.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    btn.closest('.item-wrap, .slot, .adv').classList.toggle('open', open);
+  }
+  document.addEventListener('click', (e) => {
+    const sb = e.target.closest('[data-toggle-ship]');
+    if (sb) {
+      const wrap = sb.closest('.item-wrap');
+      const opening = sb.getAttribute('aria-expanded') !== 'true';
+      $$('#ship-checklist [data-toggle-ship][aria-expanded="true"]').forEach((b) =>
+        setOpen(b, b.closest('.item-wrap').querySelector('.expand-body'), false));
+      setOpen(sb, wrap.querySelector('.expand-body'), opening);
+      return;
+    }
+    const ab = e.target.closest('[data-toggle-adv]');
+    if (ab) {
+      const body = ab.closest('.item-wrap, .adv').querySelector('.expand-body');
+      setOpen(ab, body, body.hidden);
+    }
+  });
   document.addEventListener('change', (e) => {
     const id = e.target.dataset && e.target.dataset.unlock;
     if (!id) return;
@@ -245,7 +291,6 @@
 
   function shipCard(s) {
     const owned = isOwned(s);
-    const jump = 6 - s.mass;
     const cls = s.mass === 0 ? 'Wing' : /Utility/.test(s.name) ? 'Utility ship' : /Carrier/.test(s.name) ? 'Carrier' : 'Warship';
     const tag = s.always ? '<span class="badge free">FREE</span>' : owned ? '<span class="badge own">OWNED</span>' : '';
     return `<article class="card ${owned ? '' : 'locked'}">
@@ -256,7 +301,14 @@
         </div>
         <div class="costtag"><b>${s.cost}</b><span>Credits</span></div>
       </header>
-      <div class="stats">
+      ${shipBody(s)}
+    </article>`;
+  }
+
+  function shipBody(s) {
+    const owned = isOwned(s);
+    const jump = 6 - s.mass;
+    return `<div class="stats">
         <div><b>${s.mass}</b><span>Mass</span></div>
         <div><b>${s.thrust == null ? '–' : s.thrust + '″'}</b><span>Thrust</span></div>
         <div><b>${s.sil}</b><span>Silhouette</span></div>
@@ -268,8 +320,7 @@
         <span>Mother’s wing <b>${s.mass ? s.mass + '″' : '—'}</b></span>
         ${owned || s.always ? '' : `<span>Unlock <b>${s.cost} capital</b></span>`}
       </div>
-      ${s.rules.length ? `<ul class="rules">${s.rules.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
-    </article>`;
+      ${s.rules.length ? `<ul class="rules">${s.rules.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}`;
   }
 
   function renderShips() {
@@ -282,9 +333,14 @@
 
     const advs = ALL_ADVS.filter((a) => state.unlocked[a.id]);
     $('#cnt-advs').textContent = '(' + advs.length + ')';
-    $('#advs-owned-list').innerHTML = advs.length
-      ? advs.map((a) => `<div class="adv"><span class="lvl">L${a.lvl}</span><b>${esc(a.name)}</b> <span style="color:var(--muted);font-size:12px">${esc(a.tree)}</span><small>${esc(a.desc)}</small></div>`).join('')
+    const ownedList = $('#advs-owned-list');
+    ownedList.innerHTML = advs.length
+      ? advs.map((a) => `<div class="adv">
+          <div class="adv-h"><div><span class="lvl">L${a.lvl}</span><b>${esc(a.name)}</b> <span class="tree-name">${esc(a.tree)}</span><small>${esc(a.desc)}</small></div>
+          <button type="button" class="chevbtn" data-toggle-adv aria-expanded="false" aria-label="Full rules for ${esc(a.name)}">${CHEVRON}</button></div>
+          ${advDetail(a)}</div>`).join('')
       : '<p class="none">No competitive advantages bought yet.</p>';
+    $$('.adv-full', ownedList).forEach((el) => { el.hidden = true; });
   }
   $$('[data-shipfilter]').forEach((b) => b.addEventListener('click', () => {
     prefs.shipFilter = b.dataset.shipfilter; savePrefs(); renderShips();
@@ -300,6 +356,70 @@
   function cmdTokens() { return battleScale() + 3 + (!B().nonCampaign && state.unlocked[TACTICAL_SAVANT_ID] ? 1 : 0); }
   function battleCredits() { return B().ledger.reduce((s, e) => s + e.amt, 0); }
   const signed = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n);
+
+  const helmOpen = new Set();
+  const contractOpen = new Set();
+
+  // Silhouette after campaign frame advantages (Heavy Frames +1, Light Frames -1, min 1).
+  function effSil(s) {
+    let sil = s.sil;
+    if (!B().nonCampaign) {
+      if (state.unlocked.adv_33) sil += 1;
+      if (state.unlocked.adv_40) sil -= 1;
+    }
+    return Math.max(1, sil);
+  }
+
+  // Replace scale symbols in contract stat cells with this game's numbers.
+  function atScale(str) {
+    const n = battleScale();
+    return String(str).replace(/Ⓢ\/3/g, Math.ceil(n / 3)).replace(/Ⓢ\/2/g, Math.ceil(n / 2)).replace(/Ⓢ/g, n)
+      .replace(/\((\d+)\)D/g, '$1D');
+  }
+
+  function contractCard(c) {
+    const open = contractOpen.has(c.id);
+    const n = battleScale();
+    const list = (title, rows, marks) => rows && rows.length ? `<h4>${title}</h4><ul class="cl">${rows.map((r) => {
+      const [mark, h, t] = marks ? r : ['»', r[0], r[1]];
+      return `<li class="${mark === '▲' ? 'up' : mark === '▼' ? 'down' : ''}"><span class="mk">${mark}</span><span><b>${esc(h)}:</b> ${esc(t)}</span></li>`;
+    }).join('')}</ul>` : '';
+    const objs = c.objects ? `<table class="ctab"><thead><tr><th>Object</th><th>Mass</th><th>Move</th><th>Sil</th><th>Shields</th></tr></thead><tbody>
+      ${c.objects.map((o) => `<tr><td>${esc(o[0])}</td>${o.slice(1).map((v) => `<td>${esc(atScale(v))}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '';
+    const weps = c.weapons ? `<table class="ctab"><thead><tr><th>Weapon</th><th>Range</th><th>Dice</th><th>Dmg</th></tr></thead><tbody>
+      ${c.weapons.map((w) => `<tr><td>${esc(w.name)}</td><td>${esc(w.range)}</td><td>${esc(atScale(w.dice))}</td><td>${w.dmg}</td></tr>`).join('')}</tbody></table>` : '';
+    return `<article class="contract suit-${'SHCD'['♠♥♣♦'.indexOf(c.suit)]} ${open ? 'open' : ''}">
+      <header>
+        <span class="rank">${c.rank}<i>${c.suit}</i></span>
+        <div class="ct"><b>${esc(c.name)}</b><small>${c.extraTable ? '+1 table · ' : ''}${esc(c.setup)}</small></div>
+        <button type="button" class="chevbtn" data-contract="${esc(c.id)}" aria-expanded="${open}" aria-label="${esc(c.name)} details">${CHEVRON}</button>
+      </header>
+      <div class="expand-body" ${open ? '' : 'hidden'}>
+        <p class="scaleline">At Scale ${n}: Ⓢ = ${n} · Ⓢ/2 = ${Math.ceil(n / 2)} · Ⓢ/3 = ${Math.ceil(n / 3)}${c.usesMass ? ' · Ⓜ = Mass of the ship class' : ''}</p>
+        <p><b>Contract deck:</b> ${esc(c.deck)} ${esc(SUIT_INFO[c.suit].deck)}</p>
+        ${objs}${weps}
+        ${(c.notes || []).map((t) => `<p class="cnote">${esc(t)}</p>`).join('')}
+        ${list('Special', c.special)}${list('In play', c.inPlay)}${list('Timing', c.timing)}${list('Revenue', c.revenue, true)}
+        <p class="hint small">Scan range 3″. Roll-off: D12, lowest wins. Rulebook ${esc(c.page)}.</p>
+      </div>
+    </article>`;
+  }
+
+  // +1/-1 damage token; destroys ships when damage reaches Silhouette (rulebook p.27).
+  function damageBg(g, d) {
+    const s = shipById(g.ship);
+    const sil = effSil(s);
+    if (d < 0) { g.msg = ''; g.dmg = Math.max(0, (g.dmg || 0) - 1); return; }
+    if (g.count <= 0) return;
+    g.dmg = (g.dmg || 0) + 1;
+    let killed = 0;
+    while (g.dmg >= sil && g.count > 0) { g.count--; g.dmg -= sil; killed++; }
+    if (killed) {
+      g.msg = killed + (killed > 1 ? ' ships' : ' ship') + ' destroyed.' +
+        (s.mass > 0 ? ' Roll a D6 for each: on ' + s.mass + ' or less it explodes (' + s.mass + 'D6 damage-1 attacks within ' + s.mass + '″).' : '');
+    }
+    if (g.count === 0) { g.status = 'dead'; g.dmg = 0; }
+  }
 
   function renderBattle() {
     const b = B();
@@ -321,13 +441,16 @@
       const pips = Array.from({ length: n }, (_, i) =>
         `<button type="button" class="pip ${i < spent ? 'used' : ''}" ${s.spendable ? `data-pip="${s.key}" data-i="${i}" aria-label="Token ${i + 1}${i < spent ? ' (spent)' : ''}"` : 'disabled aria-hidden="true"'}></button>`).join('');
       const sub = s.key === 'seize' ? `Initiative roll-off: <b>${seizeDie(n)}</b>` : `${n - spent} left`;
-      return `<div class="slot slot-${s.key}">
-        <div class="slot-h"><b>${s.name}</b><span>${sub}</span></div>
+      const open = helmOpen.has(s.key);
+      return `<div class="slot slot-${s.key} ${open ? 'open' : ''}">
+        <div class="slot-h"><b>${s.name}</b><span>${sub}</span>
+          <button type="button" class="chevbtn" data-helminfo="${s.key}" aria-expanded="${open}" aria-label="${s.name} rules">${CHEVRON}</button></div>
         <div class="slot-body">
           <div class="pips">${pips || '<span class="nopip">No tokens</span>'}</div>
           <div class="stepper sm"><button type="button" data-helm="${s.key}" data-d="-1" aria-label="Remove token from ${s.name}">−</button><b>${n}</b><button type="button" data-helm="${s.key}" data-d="1" aria-label="Add token to ${s.name}">+</button></div>
         </div>
         ${s.help ? `<p class="slot-help">${s.help}</p>` : ''}
+        <dl class="expand-body helm-info" ${open ? '' : 'hidden'}>${HELM_INFO[s.key].map(([h, t]) => `<dt>${esc(h)}</dt><dd>${esc(t)}</dd>`).join('')}</dl>
       </div>`;
     }).join('');
 
@@ -345,15 +468,41 @@
     util.classList.toggle('warn', utes > battleScale());
     $('#b-bgs').innerHTML = b.bgs.length ? b.bgs.map((g) => {
       const s = shipById(g.ship);
+      const start = g.start || g.count, dmg = g.dmg || 0, sil = effSil(s);
+      const lost = start - g.count;
+      const ships = Array.from({ length: start }, (_, i) => `<span class="shippip ${i < g.count ? '' : 'lost'}"></span>`).join('');
+      const crit = g.status === 'in' && g.count > 0 && dmg > s.mass;
       return `<div class="bg st-${g.status}">
-        <div class="bg-main">
-          <b>${esc(g.name || 'BG ' + g.id)}</b> · ${g.count}× ${esc(s.name)}
-          <small>Round ${g.round} · ${g.count * s.cost} credits</small>
+        <div class="bg-top">
+          <div class="bg-main">
+            <b>${esc(g.name || 'BG ' + g.id)}</b> · ${start}× ${esc(s.name)}
+            <small>Round ${g.round} · ${start * s.cost} credits · Sil ${sil} · Ⓜ${s.mass}</small>
+          </div>
+          <button type="button" class="status" data-bgstatus="${g.id}">${STATUS[g.status]}</button>
+          <button type="button" class="x" data-bgdel="${g.id}" aria-label="Remove battlegroup">×</button>
         </div>
-        <button type="button" class="status" data-bgstatus="${g.id}">${STATUS[g.status]}</button>
-        <button type="button" class="x" data-bgdel="${g.id}" aria-label="Remove battlegroup">×</button>
+        <div class="bg-track">
+          <div class="trk">
+            <span class="trk-l">Ships <b>${g.count}/${start}</b>${lost ? ` <em>${lost} lost</em>` : ''}</span>
+            <div class="trk-row"><div class="shippips">${ships}</div>
+              <div class="stepper sm"><button type="button" data-bgships="${g.id}" data-d="-1" aria-label="Lose a ship">−</button><button type="button" data-bgships="${g.id}" data-d="1" aria-label="Restore a ship">+</button></div></div>
+          </div>
+          <div class="trk">
+            <span class="trk-l">Damage <b>${dmg}</b>/${sil}${crit ? ' <em class="crit">Systems critical</em>' : ''}</span>
+            <div class="trk-row"><div class="dmgbar"><span style="width:${Math.min(100, (dmg / sil) * 100)}%"></span></div>
+              <div class="stepper sm"><button type="button" data-bgdmg="${g.id}" data-d="-1" aria-label="Remove damage">−</button><button type="button" data-bgdmg="${g.id}" data-d="1" aria-label="Add damage">+</button></div></div>
+          </div>
+          ${g.msg ? `<p class="bg-msg">${esc(g.msg)}</p>` : ''}
+        </div>
       </div>`;
     }).join('') : '<p class="empty sm">No battlegroups requisitioned yet.</p>';
+
+    // contracts
+    const picked = (b.contracts || []).map((id) => CONTRACTS.find((c) => c.id === id)).filter(Boolean);
+    const tables = 1 + picked.filter((c) => c.extraTable).length;
+    $('#b-tables').textContent = picked.length ? tables + ' table' + (tables > 1 ? 's' : '') + ' · jump point limit ' + (tables + 1) : '';
+    $('#btn-contracts').textContent = picked.length ? 'Change contracts (' + picked.length + ')' : 'Choose contracts';
+    $('#b-contracts').innerHTML = picked.map(contractCard).join('');
 
     // ledger, newest round first
     const rounds = [...new Set(b.ledger.map((e) => e.round))].sort((x, y) => y - x);
@@ -394,6 +543,22 @@
       b.spent[k] = b.spent[k] === i + 1 ? i : i + 1;   // tap the last spent token to un-spend it
     } else if (t.dataset.earn) {
       addLedger(num(t.dataset.earn), ''); return;
+    } else if (t.dataset.helminfo) {
+      const k = t.dataset.helminfo;
+      if (helmOpen.has(k)) helmOpen.delete(k); else helmOpen.add(k);
+      renderBattle(); return;
+    } else if (t.dataset.contract) {
+      const k = t.dataset.contract;
+      if (contractOpen.has(k)) contractOpen.delete(k); else contractOpen.add(k);
+      renderBattle(); return;
+    } else if (t.dataset.bgdmg) {
+      damageBg(b.bgs.find((x) => x.id === +t.dataset.bgdmg), num(t.dataset.d));
+    } else if (t.dataset.bgships) {
+      const g = b.bgs.find((x) => x.id === +t.dataset.bgships);
+      const start = g.start || g.count;
+      g.count = Math.min(start, Math.max(0, g.count + num(t.dataset.d)));
+      g.msg = '';
+      if (g.count === 0) { g.status = 'dead'; g.dmg = 0; } else if (g.status === 'dead') g.status = 'in';
     } else if (t.dataset.bgstatus) {
       const g = b.bgs.find((x) => x.id === +t.dataset.bgstatus);
       g.status = NEXT_STATUS[g.status];
@@ -448,9 +613,25 @@
     const s = shipById(reqForm.ship.value);
     const id = b.nextBg++;
     const name = reqForm.name.value.trim();
-    b.bgs.push({ id, ship: s.id, count: reqCount, round: b.round, name, status: 'in' });
+    b.bgs.push({ id, ship: s.id, count: reqCount, start: reqCount, dmg: 0, round: b.round, name, status: 'in' });
     reqDlg.close();
     addLedger(-s.cost * reqCount, 'Requisition ' + (name || 'BG ' + id) + ': ' + reqCount + '× ' + s.name, id);
+  });
+
+  const ctDlg = $('#contract-dialog');
+  $('#btn-contracts').addEventListener('click', () => {
+    const sel = new Set(B().contracts || []);
+    $('#contract-picks').innerHTML = Object.keys(SUIT_INFO).map((suit) => `
+      <div class="pick-suit"><h4>${suit} ${SUIT_INFO[suit].name}</h4>
+        ${CONTRACTS.filter((c) => c.suit === suit).map((c) => `<label class="pick">
+          <input type="checkbox" value="${esc(c.id)}" ${sel.has(c.id) ? 'checked' : ''}>
+          <span><b>${c.rank}${c.suit}</b> ${esc(c.name)}${c.extraTable ? ' <small>+1 table</small>' : ''}</span></label>`).join('')}
+      </div>`).join('');
+    ctDlg.showModal();
+  });
+  $('#contract-picks').addEventListener('change', () => {
+    B().contracts = $$('#contract-picks input:checked').map((i) => i.value);
+    save(); renderBattle();
   });
 
   $('#b-noncamp').addEventListener('change', (e) => {
@@ -462,11 +643,11 @@
       if (!confirm('End this non-campaign game and clear the Battle tab?')) return;
       state.battle = blankBattle(); save(); renderBattle(); return;
     }
-    const fleet = b.bgs.map((g) => `${g.name || 'BG ' + g.id}: ${g.count}× ${shipById(g.ship).name} (R${g.round}, ${STATUS[g.status].toLowerCase()})`);
+    const fleet = b.bgs.map((g) => { const st = g.start || g.count; return `${g.name || 'BG ' + g.id}: ${st}× ${shipById(g.ship).name} (R${g.round}, ${st - g.count} lost, ${STATUS[g.status].toLowerCase()})`; });
     openGame(-1, {
       scale: battleScale(),
       credits: String(battleCredits()),
-      notes: [b.round + ' rounds.', ...fleet].join('\n'),
+      notes: [b.round + ' rounds.' + (b.contracts && b.contracts.length ? ' Contracts: ' + b.contracts.map((id) => CONTRACTS.find((c) => c.id === id).name).join(', ') + '.' : ''), ...fleet].join('\n'),
     });
   });
   $('#btn-discard').addEventListener('click', () => {
@@ -571,6 +752,7 @@
   });
 
   // ---------- boot ----------
+  $('#b-dmg-rules').textContent = DAMAGE_RULES;
   function renderAll() { renderBound(); renderUnlocks(); renderGames(); renderShips(); renderBattle(); renderStatus(); }
   renderAll();
   showTab($('[data-view="' + prefs.tab + '"]') ? prefs.tab : 'overview');
