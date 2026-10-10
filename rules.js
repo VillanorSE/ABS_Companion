@@ -9,7 +9,7 @@ const ADV_DETAILS = {
   adv_21: ['Level 0 Aggression.', 'Once per round, one battlegroup in this fleet may Go Rogue as many times as it likes during its own activation, up to its Silhouette value, even if the damage would destroy one of its ships. Normally a battlegroup may Go Rogue only once per activation.'],
   adv_22: ['Level 0 Aggression.', 'Battlegroups in this fleet count their Ⓜ as 1 higher for Power to Weapon Systems, so they can spend one extra CMD token on it.'],
   adv_23: ['Level 0 Aggression.', 'When a ship from this fleet jumps in, it may take 1 damage to upgrade the Jump Shock attacks that jump causes to D8 dice with damage 2. Not usable when jump-hopping.'],
-  adv_24: ['Level 0 and 1 Aggression, or Level 2 Helmsmanship.', 'All ships in this fleet reduce both the minimum and maximum range of their primary weapon systems by 2″ (e.g. 9″–18″ becomes 7″–16″).'],
+  adv_24: ['Level 0 and 1 Aggression, or Level 2 Helmsmanship.', 'All ships in this fleet reduce both the minimum and maximum range of their primary weapon systems by 2″ (e.g. 9″–18″ becomes 7″–16″). House rule: maximum range can’t drop below 2″, so Light Blasters (0″–3″) become 0″–2″.'],
   adv_25: ['Level 0, 1 and 2 Aggression, or Level 3 Military.', 'When a battlegroup from this fleet attacks with auxiliary weapons during its own activation, it may re-roll any misses once. This is on top of any re-rolls from an Engage order.'],
   adv_26: [ONLY_L0, 'When a battlegroup from this fleet uses the Red Alert order, it discards one extra damage token (D3+1 instead of D3).'],
   adv_27: ['Level 0 Discipline.', 'When this CEO spends a CMD token on Executive Override, they may re-roll two dice instead of one. FAQ: with Chain of Command, only one of the two re-rolls needs to succeed to get the token back.'],
@@ -47,6 +47,9 @@ const ADV_DETAILS = {
   adv_59: ['Level 0, 1 and 2 Military, or Level 3 Discipline.', 'This fleet’s Combined Orders reach battlegroups wholly within Ⓜ+6″ instead of Ⓜ+3″.'],
   adv_60: ['Level 0, 1 and 2 Military, or Level 3 Aggression.', 'Add 1″ to the maximum range of all auxiliary weapon systems in this fleet.'],
 };
+// Group house rules, added to every campaign's notes by default.
+const DEFAULT_HOUSE_RULES = 'Close And Personal: primary weapon ranges are reduced by 2″, but maximum range can’t drop below 2″ (e.g. Light Blasters 0″–3″ become 0″–2″).';
+
 const ADV_FAQ_NOTE = 'FAQ: an “or Level N <tree>” requirement can be met on its own. You don’t need anything in the advantage’s own tree.';
 
 // Command helm reference (Command Phase, Jump Phase, Commands, Go Rogue), errata applied.

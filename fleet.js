@@ -60,7 +60,7 @@ function fleetStats(s, has) {
     if (!w) return null;
     const m = /(\d+)\D+(\d+)/.exec(w.range);
     let min = +m[1], max = +m[2];
-    if (kind === 'pri' && use('adv_24')) { min = Math.max(0, min - 2); max -= 2; }   // Close And Personal
+    if (kind === 'pri' && use('adv_24')) { min = Math.max(0, min - 2); max = Math.max(2, max - 2); }   // Close And Personal (house rule: max ≥ 2″)
     if (kind === 'pri' && use('adv_55')) max += 4;                                   // Longer Range Munitions
     if (use('adv_56')) { min += 2; max += 2; }                                       // Remote Target Patterning
     if (kind === 'aux' && use('adv_60')) max += 1;                                   // Advanced Blaster Technology

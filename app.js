@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 10;   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.11.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -14,7 +14,7 @@
       unlocked: {},            // id -> true (ship_* and adv_*)
       games: [],               // {scale,date,opp,win,credits,rep,boughtRep,purchases,notes}
       summary: { finalScale: '', finalRep: '', finalCapital: '', winner: '' },
-      notes: '',
+      notes: DEFAULT_HOUSE_RULES,
       battle: blankBattle(),
     };
   }
@@ -43,6 +43,16 @@
   }
 
   let state = load(STORE_KEY, blankState());
+  // Campaigns get the default house rules added to their notes once (they can be edited or deleted after).
+  function addHouseRules(st) {
+    if (st.houseRulesAdded) return;
+    const notes = st.notes || '';
+    if (!notes.includes(DEFAULT_HOUSE_RULES)) {
+      st.notes = notes ? notes.replace(/\s+$/, '') + '\n\n' + DEFAULT_HOUSE_RULES : DEFAULT_HOUSE_RULES;
+    }
+    st.houseRulesAdded = true;
+  }
+  if (!state.houseRulesAdded) { addHouseRules(state); store(STORE_KEY, state); }
   const prefs = load(PREFS_KEY, { tab: 'overview', shipFilter: 'mine' });
   prefs.tab = { campaign: 'overview', games: 'log', ships: 'stats', more: 'overview' }[prefs.tab] || prefs.tab;   // renamed tabs
 
@@ -818,6 +828,7 @@
   }
   function replaceState(next) {
     state = Object.assign(blankState(), next);
+    addHouseRules(state);
     state.unlocked = state.unlocked || {};
     state.games = Array.isArray(state.games) ? state.games : [];
     store(STORE_KEY, state);
