@@ -26,6 +26,7 @@
       bgs: [],                 // {id, ship, count, round, name, status: 'in'|'out'|'dead'}
       ledger: [],              // {round, amt, note, bg}
       nextBg: 1,
+      nonCampaign: false,    // one-off game: all ship classes, no campaign advantages, not logged
     };
   }
 
@@ -298,7 +299,7 @@
   const NEXT_STATUS = { in: 'out', out: 'dead', dead: 'in' };
 
   function battleScale() { return B().scale || num(state.campScale) || 3; }
-  function cmdTokens() { return battleScale() + 3 + (state.unlocked[TACTICAL_SAVANT_ID] ? 1 : 0); }
+  function cmdTokens() { return battleScale() + 3 + (!B().nonCampaign && state.unlocked[TACTICAL_SAVANT_ID] ? 1 : 0); }
   function battleCredits() { return B().ledger.reduce((s, e) => s + e.amt, 0); }
   const signed = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n);
 
@@ -306,6 +307,8 @@
     const b = B();
     $('#b-round').textContent = b.round;
     $('#b-scale').textContent = battleScale();
+    $('#b-noncamp').checked = !!b.nonCampaign;
+    $('#btn-finish').textContent = b.nonCampaign ? 'End game' : 'Finish game → Log';
 
     // helm
     const total = cmdTokens();
@@ -377,7 +380,10 @@
     const b = B();
     if (t.dataset.bstep === 'round') {
       const next = Math.max(1, b.round + num(t.dataset.d));
-      if (next > b.round) b.spent = { jump: 0, tac: 0 };   // End Phase: spent tokens come back
+      if (next > b.round) {   // End Phase: remove all CMD tokens from the helm
+        b.helm = { seize: 0, jump: 0, tac: 0 };
+        b.spent = { jump: 0, tac: 0 };
+      }
       b.round = next;
     } else if (t.dataset.bstep === 'scale') {
       b.scale = Math.min(10, Math.max(1, battleScale() + num(t.dataset.d)));
@@ -422,13 +428,10 @@
     $('#req-count').textContent = reqCount;
     $('#req-cost').textContent = cost;
     $('#req-after').textContent = '(credits after: ' + signed(battleCredits() - cost) + ')';
-    $('#req-warn').textContent = isOwned(s) ? '' : 'Your corporation hasn’t unlocked this class in the campaign.';
   }
   $('#btn-req').addEventListener('click', () => {
-    const opt = (s) => `<option value="${s.id}">${esc(s.name)} — ${s.cost} cr each</option>`;
-    const locked = SHIPS.filter((s) => !isOwned(s));
-    reqForm.ship.innerHTML = `<optgroup label="Unlocked">${SHIPS.filter(isOwned).map(opt).join('')}</optgroup>` +
-      (locked.length ? `<optgroup label="Not unlocked">${locked.map(opt).join('')}</optgroup>` : '');
+    const ships = B().nonCampaign ? SHIPS : SHIPS.filter(isOwned);
+    reqForm.ship.innerHTML = ships.map((s) => `<option value="${s.id}">${esc(s.name)} — ${s.cost} cr each</option>`).join('');
     reqCount = 1; reqForm.name.value = '';
     renderReq();
     reqDlg.showModal();
@@ -452,8 +455,15 @@
     addLedger(-s.cost * reqCount, 'Requisition ' + (name || 'BG ' + id) + ': ' + reqCount + '× ' + s.name, id);
   });
 
+  $('#b-noncamp').addEventListener('change', (e) => {
+    B().nonCampaign = e.target.checked; save(); renderBattle();
+  });
   $('#btn-finish').addEventListener('click', () => {
     const b = B();
+    if (b.nonCampaign) {
+      if (!confirm('End this non-campaign game and clear the Battle tab?')) return;
+      state.battle = blankBattle(); save(); renderBattle(); return;
+    }
     const fleet = b.bgs.map((g) => `${g.name || 'BG ' + g.id}: ${g.count}× ${shipById(g.ship).name} (R${g.round}, ${STATUS[g.status].toLowerCase()})`);
     openGame(-1, {
       scale: battleScale(),

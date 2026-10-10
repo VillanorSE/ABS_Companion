@@ -263,3 +263,6 @@ textarea.notes{min-height:200px;}
 .req-cost b{color:var(--accent);font-size:20px;}
 .req-cost span{color:var(--muted);font-size:13px;}
 .tabbar button{font-size:10.5px;}
+
+.switch.noncamp{margin:0 2px 12px;color:var(--text);align-items:flex-start;}
+.switch.noncamp small{display:block;color:var(--muted);font-size:12px;}

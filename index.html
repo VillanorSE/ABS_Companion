@@ -71,6 +71,7 @@
 
   <!-- BATTLE (in-game) -->
   <section class="view" id="view-battle" data-view="battle" hidden>
+    <label class="switch noncamp"><input type="checkbox" id="b-noncamp"> <span>Non-campaign game <small>(any ship class; not added to the campaign log)</small></span></label>
     <div class="tiles">
       <div class="tile">
         <span class="lab">Round</span>
@@ -84,7 +85,7 @@
 
     <h2 class="sect">Command helm <span class="rt" id="b-tokens"></span></h2>
     <div class="helm" id="b-helm"></div>
-    <p class="hint small">Tap a token to mark it spent. Starting a new round keeps your allocation and clears spent tokens.</p>
+    <p class="hint small">Tap a token to mark it spent. All tokens are cleared at the start of each new round.</p>
 
     <h2 class="sect">Credits</h2>
     <div class="credits" id="b-credits-card">
@@ -209,7 +210,6 @@
     </label>
     <label class="field"><span>Name (optional)</span><input type="text" name="name" placeholder="e.g. Alpha"></label>
     <p class="req-cost">Cost: <b id="req-cost">0</b> credits <span id="req-after"></span></p>
-    <p class="hint small" id="req-warn"></p>
     <div class="dlg-actions">
       <span class="spacer"></span>
       <button type="button" class="btn" id="btn-req-cancel">Cancel</button>
