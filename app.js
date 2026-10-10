@@ -41,7 +41,7 @@
   }
 
   let state = load(STORE_KEY, blankState());
-  const prefs = load(PREFS_KEY, { tab: 'overview', shipFilter: 'mine', warzone: false });
+  const prefs = load(PREFS_KEY, { tab: 'overview', shipFilter: 'mine' });
   prefs.tab = { campaign: 'overview', games: 'log' }[prefs.tab] || prefs.tab;   // tabs renamed in v2
 
   let saveTimer = null;
@@ -245,7 +245,7 @@
 
   function shipCard(s) {
     const owned = isOwned(s);
-    const jump = (prefs.warzone ? 12 : 6) - s.mass;
+    const jump = 6 - s.mass;
     const cls = s.mass === 0 ? 'Wing' : /Utility/.test(s.name) ? 'Utility ship' : /Carrier/.test(s.name) ? 'Carrier' : 'Warship';
     const tag = s.always ? '<span class="badge free">FREE</span>' : owned ? '<span class="badge own">OWNED</span>' : '';
     return `<article class="card ${owned ? '' : 'locked'}">
@@ -264,7 +264,7 @@
       </div>
       <div class="weap">${weaponRow('pri', s.pri)}${weaponRow('aux', s.aux)}</div>
       <div class="derived">
-        <span>Jump range <b>${jump}″</b>${prefs.warzone ? ' (WZ)' : ''}</span>
+        <span>Jump range <b>${jump}″</b></span>
         <span>Mother’s wing <b>${s.mass ? s.mass + '″' : '—'}</b></span>
         ${owned || s.always ? '' : `<span>Unlock <b>${s.cost} capital</b></span>`}
       </div>
@@ -277,7 +277,6 @@
     $('#cnt-mine').textContent = '(' + mine.length + ')';
     $('#cnt-all').textContent = '(' + SHIPS.length + ')';
     $$('[data-shipfilter]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.shipfilter === prefs.shipFilter)));
-    $('#opt-wz').checked = !!prefs.warzone;
     const list = prefs.shipFilter === 'all' ? SHIPS : mine;
     $('#ship-cards').innerHTML = list.map(shipCard).join('');
 
@@ -290,7 +289,6 @@
   $$('[data-shipfilter]').forEach((b) => b.addEventListener('click', () => {
     prefs.shipFilter = b.dataset.shipfilter; savePrefs(); renderShips();
   }));
-  $('#opt-wz').addEventListener('change', (e) => { prefs.warzone = e.target.checked; savePrefs(); renderShips(); });
 
   // ---------- battle (in-game tracker) ----------
   const B = () => state.battle;
