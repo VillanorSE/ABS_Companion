@@ -17,6 +17,8 @@ Open the GitHub Pages site on your phone and choose **Add to Home Screen** to in
 - **Unlocks**: ship classes (tap a name for its stats) and competitive advantages (tap ⌄ for full rules).
 - **Log**: per-game log.
 
+The **Rules** button (top bar) searches `glossary.js`: short unofficial summaries with rulebook page numbers, for the group's own use alongside the rulebook. Battle also tracks contract cards left and exhaustion (with the game-end check) and keeps the screen awake during games. The Log has campaign stats and game photos (stored on the device and included in backups). Overview can print the campaign sheet or save it as a PDF.
+
 Rules text in `rules.js` is paraphrased from the rulebook, with FAQ v1.2 and Warzone errata applied. It is not copied verbatim. Contract cards in `contracts.js` come from the group's contract reference cards.
 
 `ABS_Campaign_Tracker.html` is the printable tracker. A filled-in "Save a copy" file from it can be imported into the app.

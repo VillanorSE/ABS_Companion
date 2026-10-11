@@ -20,6 +20,7 @@
     <span class="logo">a<b>billion</b>suns</span>
     <span class="corp" id="hdr-corp"></span>
   </div>
+  <button type="button" class="icon-btn" id="btn-rules" aria-label="Rules lookup"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5"/></svg><span>Rules</span></button>
   <div class="capital-pill" id="hdr-rep" title="Total reputation">
     <span class="lab">Reputation</span><span class="val" id="hdr-rep-val">0</span>
   </div>
@@ -87,6 +88,7 @@
       <button class="btn" type="button" id="btn-export">Export backup (.json)</button>
       <button class="btn" type="button" id="btn-import">Import backup</button>
       <button class="btn" type="button" id="btn-import-html">Import saved tracker (.html)</button>
+      <button class="btn" type="button" id="btn-print">Print campaign sheet / save as PDF</button>
       <button class="btn danger" type="button" id="btn-reset">Reset campaign</button>
     </div>
     <input type="file" id="file-json" accept=".json,application/json" hidden>
@@ -116,6 +118,7 @@
 
   <!-- BATTLE (in-game) -->
   <section class="view" id="view-battle" data-view="battle" hidden>
+    <label class="switch noncamp"><input type="checkbox" id="opt-awake"> <span>Keep screen awake during games <small id="awake-note">Stops your phone locking while a game is in progress.</small></span></label>
     <label class="switch noncamp"><input type="checkbox" id="b-noncamp"> <span>Non-campaign game <small>(any ship class; not added to the campaign log)</small></span></label>
     <div class="tiles">
       <div class="tile">
@@ -129,6 +132,9 @@
     </div>
 
     <h2 class="sect">Contracts <span class="rt" id="b-tables"></span></h2>
+    <p class="endwarn" id="b-endwarn" hidden>Two or more contracts are exhausted: the game ends at the end of this round.</p>
+    <div class="ceos-row" id="b-ceos-row" hidden><span>CEOs in this game <small>(revenue = card × CEOs)</small></span>
+      <div class="stepper sm"><button type="button" data-ceos="1" data-d="-1" aria-label="Fewer CEOs">−</button><b id="b-ceos">2</b><button type="button" data-ceos="1" data-d="1" aria-label="More CEOs">+</button></div></div>
     <button class="btn wide" type="button" id="btn-contracts">Choose contracts</button>
     <button class="btn wide" type="button" id="btn-same-contracts" hidden></button>
     <div id="b-contracts"></div>
@@ -176,6 +182,10 @@
 
   <!-- LOG -->
   <section class="view" id="view-log" data-view="log" hidden>
+    <details class="fold statsbox" id="stats-wrap" hidden>
+      <summary>Campaign stats</summary>
+      <div id="campaign-stats"></div>
+    </details>
     <button class="btn primary wide" id="btn-add-game" type="button">+ Log a game</button>
     <div id="game-list"></div>
     <p class="empty" id="game-empty">No games logged yet. Each game’s Scale is added to your capital.</p>
@@ -208,6 +218,7 @@
   </section>
 
 </main>
+<div id="print-view" aria-hidden="true"></div>
 
 <nav class="tabbar" aria-label="Sections">
   <button type="button" data-tab="overview" aria-current="page"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Overview</span></button>
@@ -237,6 +248,11 @@
     </div>
     <label class="field"><span>Ship classes / advantages purchased</span><textarea name="purchases" rows="2"></textarea></label>
     <label class="field"><span>Notes</span><textarea name="notes" rows="3"></textarea></label>
+    <div class="field"><span>Photos</span>
+      <div class="photo-row"><div id="game-photos" class="game-thumbs"></div>
+        <button type="button" class="btn sm" id="btn-add-photo">+ Add photo</button></div>
+      <input type="file" id="file-photo" accept="image/*" multiple hidden>
+    </div>
     <div class="dlg-actions">
       <button type="button" class="btn danger" id="btn-del-game">Delete</button>
       <span class="spacer"></span>
@@ -274,6 +290,25 @@
   </form>
 </dialog>
 
+<dialog id="rules-dialog" class="tall">
+  <div class="rules-top"><h3>Rules lookup</h3><button type="button" class="btn sm" id="rules-close">Close</button></div>
+  <input type="search" id="rules-search" placeholder="Search: easy target, jump shock, dud…" aria-label="Search rules">
+  <p class="hint small" id="rules-note"></p>
+  <div id="rules-list"></div>
+</dialog>
+
+<dialog id="end-dialog">
+  <h3>Game over?</h3>
+  <p>Two or more contracts are exhausted at the end of round <b id="end-round"></b>, so the game ends now (rulebook p.17).</p>
+  <div class="dlg-actions"><button type="button" class="btn" id="end-keep">Keep playing</button><span class="spacer"></span>
+    <button type="button" class="btn primary" id="end-finish">Finish game</button></div>
+</dialog>
+
+<dialog id="photo-dialog" class="photo-dlg">
+  <img id="photo-full" alt="Game photo">
+  <div class="dlg-actions"><span class="spacer"></span><button type="button" class="btn" id="photo-close">Close</button></div>
+</dialog>
+
 <dialog id="when-dialog">
   <h3>When was <span id="when-name"></span> bought?</h3>
   <label class="field"><span>Bought</span><select id="when-select"></select></label>
@@ -303,6 +338,7 @@
 <script src="rules.js"></script>
 <script src="contracts.js"></script>
 <script src="fleet.js"></script>
+<script src="glossary.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

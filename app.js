@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.15.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.16.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -290,10 +290,13 @@
         ${g.win ? `<span class="res ${esc(g.win)}">${esc(g.win)}</span>` : '<span></span>'}
         <span class="meta">${bits.join(' · ') || 'Tap to edit'}</span>
         ${extra ? `<div class="extra">${esc(extra)}</div>` : ''}
+        ${(g.photos || []).length ? `<div class="game-thumbs">${g.photos.map((id) => `<span class="thumb"><img data-photo="${id}" alt="Photo from game ${i + 1}"></span>`).join('')}</div>` : ''}
         ${g.summary ? `<button type="button" class="sumbtn" data-sum="${i}" aria-expanded="false">Game summary ${CHEVRON}</button>
           <div class="sum-wrap" hidden>${summaryHtml(g.summary)}</div>` : ''}
       </div>${buys(i + 1)}`;
     }).join('');
+    loadThumbs(list);
+    renderCampaignStats();
   }
 
   const dlg = $('#game-dialog');
@@ -317,6 +320,8 @@
       else el.value = g[el.name] == null ? '' : g[el.name];
     });
     if (i < 0) suggestRep();
+    dialogPhotos = (g.photos || []).slice();
+    renderDialogPhotos();
     if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
   }
   function closeGame() { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); }
@@ -340,11 +345,12 @@
     const card = e.target.closest('[data-game]');
     if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openGame(+card.dataset.game); }
   });
-  $('#btn-cancel-game').addEventListener('click', closeGame);
+  $('#btn-cancel-game').addEventListener('click', () => { dialogPhotos = []; closeGame(); prunePhotos(); });
   $('#btn-del-game').addEventListener('click', () => {
     if (editing < 0 || !confirm('Delete game ' + (editing + 1) + '?')) return;
     state.games.splice(editing, 1);
-    save(); closeGame(); renderGames(); renderStatus();
+    dialogPhotos = [];
+    save(); closeGame(); renderGames(); renderStatus(); prunePhotos();
   });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -353,6 +359,8 @@
       if (!el.name) return;
       g[el.name] = el.type === 'checkbox' ? el.checked : el.value.trim();
     });
+    g.photos = dialogPhotos.slice();
+    dialogPhotos = [];
     if (editing >= 0) {
       const old = state.games[editing];
       if (old.summary) g.summary = old.summary;
@@ -364,7 +372,7 @@
       applyScaleRule();
     }
     if (fromBattle) { state.battle = blankBattle(); renderBattle(); showTab('log'); }
-    save(); closeGame(); renderGames(); renderStatus();
+    save(); closeGame(); renderGames(); renderStatus(); prunePhotos();
   });
   // Set (or correct) which game an unlock was bought after.
   const whenDlg = $('#when-dialog');
@@ -604,6 +612,21 @@
       .replace(/\((\d+)\)D/g, '$1D');
   }
 
+  const ceos = () => B().ceos || 2;
+  function ctState(id) {
+    const b = B();
+    b.ct = b.ct || {};
+    return b.ct[id] || { left: battleScale(), ex: false };
+  }
+  function ctTrack(c) {
+    const t = ctState(c.id);
+    return `<div class="ct-track">
+      <span class="ct-l">Cards left</span>
+      <div class="stepper sm"><button type="button" data-ctleft="${esc(c.id)}" data-d="-1" aria-label="One fewer card">−</button><b>${t.left}</b><button type="button" data-ctleft="${esc(c.id)}" data-d="1" aria-label="One more card">+</button></div>
+      <button type="button" class="ct-ex ${t.ex ? 'on' : ''}" data-ctex="${esc(c.id)}" aria-pressed="${t.ex}">${t.ex ? 'Exhausted' : 'Active'}</button>
+    </div>`;
+  }
+
   function contractCard(c) {
     const open = contractOpen.has(c.id);
     const n = battleScale();
@@ -621,7 +644,9 @@
         <div class="ct"><b>${esc(c.name)}</b><small>${c.extraTable ? '+1 table · ' : ''}${esc(c.setup)}</small></div>
         <span class="chevbtn" aria-hidden="true">${CHEVRON}</span>
       </header>
+      ${ctTrack(c)}
       <div class="expand-body" ${open ? '' : 'hidden'}>
+        <p class="maxrev">Contract deck: ${n} card${n === 1 ? '' : 's'} · up to ${(n * (n + 1)) / 2 * ceos()} credits with ${ceos()} CEOs</p>
         <p class="scaleline">At Scale ${n}: Ⓢ = ${n} · Ⓢ/2 = ${Math.ceil(n / 2)} · Ⓢ/3 = ${Math.ceil(n / 3)}${c.usesMass ? ' · Ⓜ = Mass of the ship class' : ''}</p>
         <p><b>Contract deck:</b> ${esc(c.deck)} ${esc(SUIT_INFO[c.suit].deck)}</p>
         ${objs}${weps}
@@ -751,6 +776,10 @@
     const picked = (b.contracts || []).map((id) => CONTRACTS.find((c) => c.id === id)).filter(Boolean);
     const tables = 1 + picked.filter((c) => c.extraTable).length;
     $('#b-tables').textContent = picked.length ? tables + ' table' + (tables > 1 ? 's' : '') + ' · jump point limit ' + (tables + 1) : '';
+    const exN = exhaustedCount();
+    $('#b-endwarn').hidden = exN < 2;
+    $('#b-ceos').textContent = ceos();
+    $('#b-ceos-row').hidden = !picked.length;
     $('#btn-contracts').textContent = picked.length ? 'Change contracts (' + picked.length + ')' : 'Choose contracts';
     $('#b-contracts').innerHTML = picked.map(contractCard).join('');
     const last = [...state.games].reverse().find((g) => g.contracts && g.contracts.length);
@@ -787,7 +816,7 @@
 
   $('#view-battle').addEventListener('click', (e) => {
     const card = e.target.closest('[data-contract]');
-    if (card) { toggleContract(card); return; }
+    if (card && !e.target.closest('.ct-track')) { toggleContract(card); return; }
     const b = B();
     const refill = e.target.closest('[data-refill]');
     const spend = e.target.closest('[data-spend]');
@@ -824,6 +853,17 @@
       const k = t.dataset.helminfo;
       if (helmOpen.has(k)) helmOpen.delete(k); else helmOpen.add(k);
       renderBattle(); return;
+    } else if (t.dataset.ctleft) {
+      const id = t.dataset.ctleft, cur = ctState(id);
+      cur.left = Math.max(0, cur.left + num(t.dataset.d));
+      if (cur.left === 0) cur.ex = true;
+      b.ct[id] = cur;
+    } else if (t.dataset.ctex) {
+      const id = t.dataset.ctex, cur = ctState(id);
+      cur.ex = !cur.ex;
+      b.ct[id] = cur;
+    } else if (t.dataset.ceos) {
+      b.ceos = Math.min(8, Math.max(2, ceos() + num(t.dataset.d)));
     } else if (t.dataset.use) {
       b.advUsed = b.advUsed || {};
       if (b.advUsed[t.dataset.use]) delete b.advUsed[t.dataset.use]; else b.advUsed[t.dataset.use] = true;
@@ -859,6 +899,14 @@
   // Next round. If battlegroups aren't marked activated, ask first (Continue / Cancel) but never forbid it.
   const roundDlg = $('#round-dialog');
   function nextRound() {
+    if (exhaustedCount() >= 2) {
+      $('#end-round').textContent = B().round;
+      endDlg.showModal();
+      return;
+    }
+    nextRoundChecks();
+  }
+  function nextRoundChecks() {
     const unacted = B().bgs.filter((g) => g.status === 'in' && g.count > 0 && !g.act);
     if (!unacted.length) { startNextRound(); return; }
     $('#round-dlg-list').textContent = unacted.map((g) => (g.name || 'BG ' + g.id) + ' (' + shipById(g.ship).name + ')').join(', ');
@@ -1039,6 +1087,7 @@
       if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
     window.scrollTo(0, 0);
+    updateWakeLock();
   }
   $$('.tabbar button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $('#hdr-rep').addEventListener('click', () => showTab('log'));
@@ -1067,9 +1116,12 @@
     renderAll();
   }
 
-  $('#btn-export').addEventListener('click', () => {
-    download(safeName() + '_ABS_Campaign.json', JSON.stringify(state, null, 2), 'application/json');
-    setStatus('Backup downloaded.');
+  $('#btn-export').addEventListener('click', async () => {
+    let photoData = {};
+    try { photoData = await exportPhotos(); } catch (err) { /* photos unavailable */ }
+    download(safeName() + '_ABS_Campaign.json', JSON.stringify(Object.assign({}, state, { photoData }), null, 2), 'application/json');
+    const np = Object.keys(photoData).length;
+    setStatus('Backup downloaded' + (np ? ' (with ' + np + ' photo' + (np === 1 ? '' : 's') + ').' : '.'));
   });
   $('#btn-import').addEventListener('click', () => $('#file-json').click());
   $('#btn-import-html').addEventListener('click', () => $('#file-html').click());
@@ -1082,6 +1134,8 @@
       if (data && data.type === SHARE_TYPE) { addRivals([data]); setStatus('That was a rival’s shared corporation, so it was added to Rivals.'); return; }
       if (typeof data !== 'object' || !data || !('unlocked' in data)) throw new Error('not a backup');
       if (!confirm('Replace the current campaign with "' + f.name + '"?')) return;
+      if (data.photoData) { try { await importPhotos(data.photoData); } catch (err) { /* skip photos */ } }
+      delete data.photoData;
       replaceState(data);
       setStatus('Imported ' + f.name + '.');
     } catch (err) { setStatus('That file isn’t an ABS Companion backup.', true); }
@@ -1126,6 +1180,7 @@
   $('#btn-reset').addEventListener('click', () => {
     if (!confirm('Clear the whole campaign on this device? Export a backup first if you want to keep it.')) return;
     replaceState(blankState());
+    prunePhotos();
     setStatus('Campaign reset.');
   });
 
@@ -1233,6 +1288,277 @@
       delete state.rivals[t.dataset.rivalDel];
       save(); renderStandings(); renderShips();
     }
+  });
+
+  // ---------- keep the screen awake during a game ----------
+  let wakeLock = null;
+  function battleInProgress() {
+    const b = B();
+    return b.round > 1 || b.bgs.length > 0 || b.ledger.length > 0 || (b.contracts || []).length > 0;
+  }
+  function updateWakeLock() {
+    const want = prefs.keepAwake !== false && document.visibilityState === 'visible' &&
+      (prefs.tab === 'battle' || battleInProgress());
+    if (!('wakeLock' in navigator)) return;
+    if (want && !wakeLock) {
+      navigator.wakeLock.request('screen').then((l) => {
+        wakeLock = l;
+        l.addEventListener('release', () => { wakeLock = null; });
+      }).catch(() => {});
+    } else if (!want && wakeLock) {
+      wakeLock.release().catch(() => {});
+      wakeLock = null;
+    }
+  }
+  document.addEventListener('visibilitychange', updateWakeLock);
+  $('#opt-awake').checked = prefs.keepAwake !== false;
+  $('#opt-awake').addEventListener('change', (e) => { prefs.keepAwake = e.target.checked; savePrefs(); updateWakeLock(); });
+  if (!('wakeLock' in navigator)) $('#awake-note').textContent = 'Not supported by this browser; set your phone’s auto-lock instead.';
+
+  // ---------- game end check (two or more contracts exhausted at the end of a round) ----------
+  const endDlg = $('#end-dialog');
+  function exhaustedCount() {
+    const ct = B().ct || {};
+    return (B().contracts || []).filter((id) => ct[id] && ct[id].ex).length;
+  }
+  $('#end-keep').addEventListener('click', () => { endDlg.close(); nextRoundChecks(); });
+  $('#end-finish').addEventListener('click', () => { endDlg.close(); $('#btn-finish').click(); });
+
+  // ---------- rules lookup ----------
+  const rulesDlg = $('#rules-dialog');
+  function renderRules() {
+    const q = $('#rules-search').value.trim().toLowerCase();
+    const words = q.split(/\s+/).filter(Boolean);
+    const hits = GLOSSARY.filter((g) => {
+      const hay = (g.t + ' ' + g.k + ' ' + g.d).toLowerCase();
+      return words.every((w) => hay.includes(w));
+    });
+    $('#rules-list').innerHTML = hits.length ? hits.map((g) => `<div class="rule-item">
+        <div class="rule-h"><b>${esc(g.t)}</b><span>p.${g.p}</span></div>
+        <p>${esc(g.d)}</p></div>`).join('')
+      : '<p class="none">No matches. Try another word, or check the rulebook index.</p>';
+  }
+  $('#btn-rules').addEventListener('click', () => {
+    $('#rules-search').value = '';
+    renderRules();
+    rulesDlg.showModal();
+  });
+  $('#rules-search').addEventListener('input', renderRules);
+  $('#rules-close').addEventListener('click', () => rulesDlg.close());
+  $('#rules-note').textContent = GLOSSARY_NOTE;
+
+  // ---------- campaign stats ----------
+  function renderCampaignStats() {
+    const games = state.games;
+    const box = $('#campaign-stats');
+    $('#stats-wrap').hidden = !games.length;
+    if (!games.length) { box.innerHTML = ''; return; }
+    const res = (w) => games.filter((g) => g.win === w).length;
+    const wins = res('Win'), losses = res('Loss'), draws = res('Draw');
+    const withCredits = games.filter((g) => g.credits !== '' && g.credits != null && !isNaN(parseFloat(g.credits)));
+    const avgCr = withCredits.length ? withCredits.reduce((t, g) => t + num(g.credits), 0) / withCredits.length : null;
+    const profits = withCredits.filter((g) => num(g.credits) > 0).length;
+    const c = capital();
+    const unlockSpend = c.spent - games.filter((g) => g.boughtRep).length * REP_PURCHASE_COST;
+    const repSpend = games.filter((g) => g.boughtRep).length * REP_PURCHASE_COST;
+
+    // per-game credits and running reputation
+    let rep = 0;
+    const per = games.map((g, i) => { rep += num(g.rep) + (g.boughtRep ? 1 : 0); return { n: i + 1, cr: num(g.credits), hasCr: g.credits !== '' && g.credits != null, rep }; });
+    const maxCr = Math.max(1, ...per.map((p) => Math.abs(p.cr)));
+
+    // ship classes bought and lost (from saved game summaries)
+    const byClass = {};
+    games.forEach((g) => (g.summary ? g.summary.fleet : []).forEach((f) => {
+      const k = byClass[f.ship] = byClass[f.ship] || { bought: 0, lost: 0, spent: 0 };
+      k.bought += f.count; k.lost += f.lost; k.spent += f.cost;
+    }));
+    const classes = Object.entries(byClass).sort((a, b) => b[1].bought - a[1].bought);
+    const summarized = games.filter((g) => g.summary).length;
+
+    box.innerHTML = `
+      <div class="sum-tiles stats4">
+        <div><b>${games.length}</b><span>Games</span></div>
+        <div><b>${wins}–${losses}${draws ? '–' + draws : ''}</b><span>W–L${draws ? '–D' : ''}</span></div>
+        <div><b>${Math.round((wins / games.length) * 100)}%</b><span>Win rate</span></div>
+        <div><b>${avgCr == null ? '–' : signed(Math.round(avgCr * 10) / 10)}</b><span>Avg credits</span></div>
+      </div>
+      <div class="sum-tiles stats4">
+        <div><b>${profits}/${withCredits.length}</b><span>In profit</span></div>
+        <div><b>${reputation()}</b><span>Reputation</span></div>
+        <div><b>${c.total}</b><span>Capital earned</span></div>
+        <div><b>${unlockSpend}${repSpend ? '+' + repSpend : ''}</b><span>Spent${repSpend ? ' (+rep)' : ''}</span></div>
+      </div>
+      <h4>Final credits by game</h4>
+      <div class="gbars">${per.map((p) => `<div class="gbar" title="Game ${p.n}">
+        <div class="gcol"><span class="${p.cr >= 0 ? 'up' : 'down'}" style="height:${p.hasCr ? Math.max(4, (Math.abs(p.cr) / maxCr) * 100) : 0}%"></span></div>
+        <b class="${p.cr > 0 ? 'pos' : p.cr < 0 ? 'neg' : ''}">${p.hasCr ? signed(p.cr) : '–'}</b><small>G${p.n}</small></div>`).join('')}</div>
+      <h4>Reputation over the campaign</h4>
+      <div class="repline">${per.map((p) => `<span><b>${p.rep}</b><small>G${p.n}</small></span>`).join('<i>›</i>')}</div>
+      ${classes.length ? `<h4>Ships requisitioned (${summarized} game${summarized === 1 ? '' : 's'} with summaries)</h4>
+        <table class="ctab"><thead><tr><th>Class</th><th>Bought</th><th>Lost</th><th>Credits</th></tr></thead><tbody>
+        ${classes.map(([n, k]) => `<tr><td>${esc(n)}</td><td>${k.bought}</td><td class="${k.lost ? 'neg' : ''}">${k.lost}</td><td>${k.spent}</td></tr>`).join('')}</tbody></table>`
+        : '<p class="hint small">Finish games from the Battle tab to see which ships you requisition and lose.</p>'}`;
+  }
+
+  // ---------- photos (stored on this device in IndexedDB) ----------
+  const PHOTO_DB = 'abs-companion-photos';
+  function photoDb() {
+    return new Promise((resolve, reject) => {
+      const r = indexedDB.open(PHOTO_DB, 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('photos');
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+  }
+  async function photoTx(mode, fn) {
+    const db = await photoDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('photos', mode);
+      const req = fn(tx.objectStore('photos'));
+      tx.oncomplete = () => resolve(req && req.result);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  const getPhoto = (id) => photoTx('readonly', (s) => s.get(id));
+  const putPhoto = (id, blob) => photoTx('readwrite', (s) => s.put(blob, id));
+  const delPhoto = (id) => photoTx('readwrite', (s) => s.delete(id));
+  const allPhotoKeys = () => photoTx('readonly', (s) => s.getAllKeys());
+
+  // Shrink to at most 1600px on the long side as JPEG, so dozens of photos fit comfortably.
+  function shrinkImage(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        c.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), 'image/jpeg', 0.82);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image')); };
+      img.src = url;
+    });
+  }
+
+  const thumbUrls = {};
+  async function photoUrl(id) {
+    if (thumbUrls[id]) return thumbUrls[id];
+    const blob = await getPhoto(id).catch(() => null);
+    if (!blob) return null;
+    return (thumbUrls[id] = URL.createObjectURL(blob));
+  }
+  // Fill any <img data-photo> placeholders in a container.
+  function loadThumbs(root) {
+    $$('img[data-photo]', root).forEach(async (img) => {
+      const u = await photoUrl(img.dataset.photo);
+      if (u) img.src = u; else img.closest('.thumb').classList.add('missing');
+    });
+  }
+
+  let dialogPhotos = [];
+  function renderDialogPhotos() {
+    const box = $('#game-photos');
+    box.innerHTML = dialogPhotos.map((id) => `<span class="thumb"><img data-photo="${id}" alt="Game photo">
+      <button type="button" class="x" data-photo-del="${id}" aria-label="Remove photo">×</button></span>`).join('');
+    loadThumbs(box);
+  }
+  $('#btn-add-photo').addEventListener('click', () => $('#file-photo').click());
+  $('#file-photo').addEventListener('change', async (e) => {
+    const files = [...e.target.files]; e.target.value = '';
+    for (const f of files) {
+      try {
+        const blob = await shrinkImage(f);
+        const id = 'p' + newId();
+        await putPhoto(id, blob);
+        dialogPhotos.push(id);
+      } catch (err) { alert('Couldn’t add that photo.'); }
+    }
+    renderDialogPhotos();
+  });
+  $('#game-photos').addEventListener('click', (e) => {
+    const d = e.target.closest('[data-photo-del]');
+    if (d) { dialogPhotos = dialogPhotos.filter((x) => x !== d.dataset.photoDel); renderDialogPhotos(); }
+  });
+
+  const viewDlg = $('#photo-dialog');
+  $('#game-list').addEventListener('click', async (e) => {
+    const t = e.target.closest('.game-thumbs img');
+    if (!t) return;
+    e.stopPropagation();
+    $('#photo-full').src = (await photoUrl(t.dataset.photo)) || '';
+    viewDlg.showModal();
+  }, true);
+  $('#photo-close').addEventListener('click', () => viewDlg.close());
+
+  // Remove photos no game refers to any more (deleted games, removed photos).
+  async function prunePhotos() {
+    try {
+      const used = new Set(state.games.flatMap((g) => g.photos || []).concat(dialogPhotos));
+      const keys = await allPhotoKeys();
+      await Promise.all(keys.filter((k) => !used.has(k)).map(delPhoto));
+    } catch (err) { /* storage unavailable */ }
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.readAsDataURL(blob); });
+  }
+  async function exportPhotos() {
+    const out = {};
+    for (const id of state.games.flatMap((g) => g.photos || [])) {
+      const b = await getPhoto(id).catch(() => null);
+      if (b) out[id] = await blobToDataUrl(b);
+    }
+    return out;
+  }
+  async function importPhotos(map) {
+    for (const [id, url] of Object.entries(map || {})) {
+      const blob = await (await fetch(url)).blob();
+      await putPhoto(id, blob);
+    }
+  }
+
+  // ---------- printable campaign sheet ----------
+  function buildPrintSheet() {
+    const c = capital();
+    const name = (id) => (SHIPS.find((x) => x.id === id) || ALL_ADVS.find((a) => a.id === id)).name;
+    const ships = SHIPS.filter(isOwned);
+    const advs = ALL_ADVS.filter((a) => state.unlocked[a.id]);
+    const recorded = new Set((state.purchases || []).map((p) => p.id));
+    const groups = [];
+    for (let n = 0; n <= state.games.length; n++) {
+      const ps = (state.purchases || []).filter((p) => p.afterGame === n).map((p) => p.id);
+      if (n === 0) Object.keys(state.unlocked).filter((id) => !recorded.has(id)).forEach((id) => ps.push(id));
+      if (ps.length) groups.push({ n, items: ps });
+    }
+    const rivals = Object.values(state.rivals || {});
+    const today = new Date().toISOString().slice(0, 10);
+    return `
+      <header class="p-head"><div><h1>A BILLION SUNS</h1><div>Campaign sheet · printed ${today}</div></div>
+        <div class="p-corp"><b>${esc(state.corp || 'Unnamed corporation')}</b><span>${esc(state.ceo || '')}${state.startDate ? ' · since ' + esc(state.startDate) : ''}</span></div></header>
+      <table class="p-stat"><tr>
+        <td><b>${reputation()}</b>Reputation</td><td><b>${state.games.length}</b>Games played</td>
+        <td><b>${c.total}</b>Capital earned</td><td><b>${c.avail}</b>Capital available</td><td><b>${esc(state.campScale || '3')}</b>Campaign scale</td></tr></table>
+      <div class="p-cols">
+        <section><h2>Ship classes</h2><ul>${ships.map((s) => `<li>${esc(s.name)}${s.wz ? ' (WZ)' : ''}<span>${s.always ? 'free' : s.cost}</span></li>`).join('')}</ul></section>
+        <section><h2>Competitive advantages</h2>${advs.length ? `<ul>${advs.map((a) => `<li>L${a.lvl} ${esc(a.name)} <i>${esc(a.tree)}</i><span>${a.lvl}</span></li>`).join('')}</ul>` : '<p>None yet.</p>'}</section>
+      </div>
+      <h2>Capital history</h2>
+      ${groups.length ? `<table class="p-table"><thead><tr><th>When</th><th>Bought</th><th>Capital</th></tr></thead><tbody>
+        ${groups.map((g) => `<tr><td>${g.n === 0 ? 'Before game 1' : 'After game ' + g.n}</td><td>${g.items.map((id) => esc(name(id))).join(', ')}</td><td>−${g.items.reduce((t, id) => t + unlockCost(id), 0)}</td></tr>`).join('')}</tbody></table>` : '<p>No purchases yet.</p>'}
+      <h2>Game log</h2>
+      ${state.games.length ? `<table class="p-table"><thead><tr><th>#</th><th>Date</th><th>Opponent(s)</th><th>Scale</th><th>Result</th><th>Credits</th><th>Rep</th><th>Bought rep</th></tr></thead><tbody>
+        ${state.games.map((g, i) => `<tr><td>${i + 1}</td><td>${esc(g.date || '')}</td><td>${esc(g.opp || '')}</td><td>${esc(g.scale || '')}</td><td>${esc(g.win || '')}</td><td>${esc(g.credits || '')}</td><td>${esc(g.rep || '')}</td><td>${g.boughtRep ? 'Yes (−10)' : ''}</td></tr>`).join('')}</tbody></table>` : '<p>No games yet.</p>'}
+      ${rivals.length ? `<h2>Standings</h2><table class="p-table"><thead><tr><th>Corporation</th><th>CEO</th><th>Reputation</th><th>Games</th><th>Shared</th></tr></thead><tbody>
+        <tr><td><b>${esc(state.corp || 'Unnamed')}</b> (you)</td><td>${esc(state.ceo || '')}</td><td>${reputation()}</td><td>${state.games.length}</td><td>${today}</td></tr>
+        ${rivals.map((r) => `<tr><td>${esc(r.corp || 'Unnamed')}</td><td>${esc(r.ceo || '')}</td><td>${r.rep || 0}</td><td>${(r.games || []).length}</td><td>${esc((r.sharedAt || '').slice(0, 10))}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${state.notes ? `<h2>Notes &amp; house rules</h2><p class="p-notes">${esc(state.notes)}</p>` : ''}`;
+  }
+  $('#btn-print').addEventListener('click', () => {
+    $('#print-view').innerHTML = buildPrintSheet();
+    window.print();
   });
 
   // ---------- boot ----------
