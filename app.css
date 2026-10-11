@@ -561,3 +561,7 @@ dialog.tall:not([open]){display:none;}
   .p-table tr{break-inside:avoid;}
   .p-notes{white-space:pre-wrap;}
 }
+
+/* 0.17 */
+.dlg-buys{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;}
+.dlg-buys .hint{margin:4px 0;}

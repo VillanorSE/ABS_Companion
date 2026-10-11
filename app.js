@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.16.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.17.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -12,7 +12,7 @@
       corp: '', ceo: '', startDate: '',
       campScale: '', totalRep: '',
       unlocked: {},            // id -> true (ship_* and adv_*)
-      games: [],               // {scale,date,opp,win,credits,rep,boughtRep,purchases,notes}
+      games: [],               // {scale,date,opp,win,credits,rep,boughtRep,notes,photos,summary,contracts}
       summary: { finalScale: '', finalRep: '', finalCapital: '', winner: '' },
       notes: DEFAULT_HOUSE_RULES,
       scaleRule: '',           // '' keep scale; 'N' raise by 1 every N games at the current scale
@@ -59,6 +59,19 @@
   if (!state.houseRulesAdded) { addHouseRules(state); store(STORE_KEY, state); }
   // Stable id for this corporation, so rivals' copies of it update instead of duplicating.
   if (!state.corpId) { state.corpId = newId(); store(STORE_KEY, state); }
+  // Purchases now come from the purchase history; keep any old typed text by moving it into the game's notes.
+  function movePurchaseText(games) {
+    let moved = false;
+    (games || []).forEach((g) => {
+      if (g.purchases) {
+        g.notes = (g.notes ? g.notes.replace(/\s+$/, '') + '\n' : '') + 'Purchased: ' + g.purchases;
+        moved = true;
+      }
+      delete g.purchases;
+    });
+    return moved;
+  }
+  if (movePurchaseText(state.games)) store(STORE_KEY, state);
   function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   const prefs = load(PREFS_KEY, { tab: 'overview', shipFilter: 'mine' });
   prefs.tab = { campaign: 'overview', games: 'log', ships: 'stats', more: 'overview' }[prefs.tab] || prefs.tab;   // renamed tabs
@@ -283,7 +296,7 @@
       if (g.rep) bits.push('+' + esc(g.rep) + ' rep');
       if (g.boughtRep) bits.push('bought rep (−10)');
       if (g.date) bits.push(esc(g.date));
-      const extra = [g.purchases && 'Purchased: ' + g.purchases, g.notes].filter(Boolean).join('\n');
+      const extra = g.notes || '';
       return `<div class="game" data-game="${i}" role="button" tabindex="0">
         <span class="num">${i + 1}</span>
         <span class="opp">${g.opp ? 'vs ' + esc(g.opp) : '<span style="color:var(--muted)">Game ' + (i + 1) + '</span>'}</span>
@@ -322,7 +335,17 @@
     if (i < 0) suggestRep();
     dialogPhotos = (g.photos || []).slice();
     renderDialogPhotos();
+    renderDialogBuys(i);
     if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+  }
+  function renderDialogBuys(i) {
+    const n = i >= 0 ? i + 1 : state.games.length + 1;
+    const ps = (state.purchases || []).filter((p) => p.afterGame === n);
+    const name = (id) => (SHIPS.find((x) => x.id === id) || ALL_ADVS.find((a) => a.id === id)).name;
+    $('#dlg-buys').innerHTML = ps.length
+      ? ps.map((p) => `<div class="buy-item"><span>${esc(name(p.id))}</span><b>${p.cost}</b></div>`).join('') +
+        `<p class="hint small">−${ps.reduce((t, p) => t + p.cost, 0)} capital. Change these on the Log by tapping a purchase.</p>`
+      : `<p class="hint small">${i >= 0 ? 'Nothing recorded.' : 'Nothing yet.'} Unlocks you tick after logging this game are recorded here automatically; tap a purchase on the Log to move it.</p>`;
   }
   function closeGame() { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); }
 
@@ -1109,6 +1132,7 @@
   }
   function replaceState(next) {
     state = Object.assign(blankState(), next);
+    movePurchaseText(state.games);
     addHouseRules(state);
     state.unlocked = state.unlocked || {};
     state.games = Array.isArray(state.games) ? state.games : [];
@@ -1161,7 +1185,7 @@
         const b = 61 + r * 9;
         const g = { scale: val('log_' + b), opp: val('log_' + (b + 1)), win: normWin(val('log_' + (b + 2))),
           credits: val('log_' + (b + 3)), rep: val('log_' + (b + 4)), boughtRep: chk('log_' + (b + 5)),
-          purchases: val('log_' + (b + 6)), date: val('log_' + (b + 7)), notes: val('log_' + (b + 8)) };
+          purchases: val('log_' + (b + 6)), date: val('log_' + (b + 7)), notes: val('log_' + (b + 8)) };   // purchases text moves to notes below
         const any = Object.keys(g).some((k) => g[k]);
         if (any) next.games.push(g);
       }

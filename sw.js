@@ -1,5 +1,5 @@
 // Offline cache. Bump VERSION (and APP_VERSION in app.js) whenever app files change.
-const VERSION = 'abs-companion-0.16.0';
+const VERSION = 'abs-companion-0.17.0';
 const FILES = ['./', 'index.html', 'app.css', 'app.js', 'data.js', 'rules.js', 'contracts.js', 'fleet.js', 'glossary.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
