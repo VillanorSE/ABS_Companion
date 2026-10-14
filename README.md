@@ -38,6 +38,8 @@ Then commit and push. One player taps **Overview → Rivals → Start online cam
 
 How it works: each corporation is one document under `campaigns/{code}/corps/`. Phones sign in anonymously, so nobody needs an account; signing in with Google is optional and links to that same account, adding a cloud backup under `users/{uid}/backup/` (photos stay on the phone). Anyone who knows the code can read that campaign, but only the phone that created a corporation can change or remove it. The sign-in travels with **Export backup**, so moving to a new phone keeps your corporation. Firebase's free tier is far more than a gaming group needs.
 
+**Teams**: teammates can share one corporation. One taps **Overview → Team → Make this a team corporation** and shares the `TEAM-XXXX-XXXX` code; the others tap **Join team**. Any teammate's phone can log games, buy unlocks and edit notes; changes sync between phones (stored in `teams/{code}`) and are merged so simultaneous edits aren't lost. The Battle tab, photos and rivals stay on each phone. In an online campaign the team shows as one corporation with all its CEOs.
+
 `ABS_Campaign_Tracker.html` is the printable tracker. A filled-in "Save a copy" file from it can be imported into the app.
 
 When you change app files, bump the version (e.g. 0.11.0 → 0.12.0) in both `sw.js` (`VERSION`) and `app.js` (`APP_VERSION`) so installed copies update.

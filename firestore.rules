@@ -2,28 +2,61 @@ rules_version = '2';
 // Paste these into Firebase console > Firestore Database > Rules, then Publish.
 //
 // campaigns/{code}/corps/{corpId}: one document per corporation in an online campaign.
-//   Anyone signed in (anonymously or with Google) who knows the campaign code can read it,
-//   but only the account that created a corporation's document can change or delete it.
+//   Anyone signed in (anonymously or with Google) who knows the campaign code can read it.
+//   Only the account that created it, or a member of its team, can change or delete it.
 //   Campaign codes themselves can't be listed.
+// teams/{code}: a corporation shared by teammates. Only members can read or change it;
+//   anyone who knows the team code can add themselves (and nothing else) to join.
 // users/{uid}/backup/{doc}: a player's cloud backup, readable and writable only by them.
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /campaigns/{code}/corps/{corpId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null
-        && request.resource.data.owner == request.auth.uid
-        && request.resource.data.data is string
-        && request.resource.data.data.size() < 200000;
-      allow update: if request.auth != null
-        && resource.data.owner == request.auth.uid
-        && request.resource.data.owner == request.auth.uid
-        && request.resource.data.data is string
-        && request.resource.data.data.size() < 200000;
-      allow delete: if request.auth != null && resource.data.owner == request.auth.uid;
+    function signedIn() { return request.auth != null; }
+    function teamMember(team) {
+      return team is string && team != ''
+        && exists(/databases/$(database)/documents/teams/$(team))
+        && request.auth.uid in get(/databases/$(database)/documents/teams/$(team)).data.members;
     }
+    function validCorp() {
+      return request.resource.data.data is string && request.resource.data.data.size() < 200000;
+    }
+    function validTeam() {
+      return request.resource.data.data is string && request.resource.data.data.size() < 900000
+        && request.resource.data.members.size() <= 8;
+    }
+
+    match /campaigns/{code}/corps/{corpId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.owner == request.auth.uid && validCorp();
+      allow update: if signedIn() && validCorp()
+        && request.resource.data.owner == resource.data.owner
+        && (resource.data.owner == request.auth.uid
+            || (teamMember(resource.data.get('team', ''))
+                && request.resource.data.get('team', '') == resource.data.get('team', '')));
+      allow delete: if signedIn()
+        && (resource.data.owner == request.auth.uid || teamMember(resource.data.get('team', '')));
+    }
+
+    match /teams/{team} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow create: if signedIn() && request.resource.data.members == [request.auth.uid]
+        && request.resource.data.corpId is string && validTeam();
+      allow update: if signedIn() && (
+        // members can update the shared corporation (but not swap which corporation it is)
+        (request.auth.uid in resource.data.members && validTeam()
+          && request.resource.data.corpId == resource.data.corpId)
+        // joining: someone with the code adds only themselves
+        || (!(request.auth.uid in resource.data.members)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'names'])
+          && request.resource.data.members.hasAll(resource.data.members)
+          && request.resource.data.members.size() == resource.data.members.size() + 1
+          && request.auth.uid in request.resource.data.members
+          && request.resource.data.members.size() <= 8));
+      allow delete: if signedIn() && resource.data.members == [request.auth.uid];
+    }
+
     match /users/{uid}/backup/{doc} {
-      allow read, delete: if request.auth != null && request.auth.uid == uid;
-      allow create, update: if request.auth != null && request.auth.uid == uid
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
         && request.resource.data.data is string
         && request.resource.data.data.size() < 900000;
     }

@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.19.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.20.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -72,6 +72,18 @@
     return moved;
   }
   if (movePurchaseText(state.games)) store(STORE_KEY, state);
+  // Give games and purchases stable ids (and games a creation time) so teammates' changes can be merged.
+  function addIds(st) {
+    let changed = false;
+    const t0 = Date.parse('2026-01-01T00:00:00Z');
+    (st.games || []).forEach((g, i) => {
+      if (!g.id) { g.id = 'g' + newId(); changed = true; }
+      if (!g.at) { g.at = new Date(t0 + i * 1000).toISOString(); changed = true; }
+    });
+    (st.purchases || []).forEach((p) => { if (!p.pid) { p.pid = 'p' + newId(); changed = true; } });
+    return changed;
+  }
+  if (addIds(state)) store(STORE_KEY, state);
   function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   const prefs = load(PREFS_KEY, { tab: 'overview', shipFilter: 'mine' });
   prefs.tab = { campaign: 'overview', games: 'log', ships: 'stats', more: 'overview' }[prefs.tab] || prefs.tab;   // renamed tabs
@@ -80,7 +92,7 @@
   function save() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => store(STORE_KEY, state), 250);
-    try { schedulePush(); scheduleBackup(); } catch (err) { /* online sync not ready yet */ }
+    try { schedulePush(); scheduleBackup(); scheduleTeamSync(); } catch (err) { /* online sync not ready yet */ }
   }
   function savePrefs() { store(PREFS_KEY, prefs); }
 
@@ -256,7 +268,7 @@
     state.purchases = state.purchases || [];
     if (on) {
       state.unlocked[id] = true;
-      state.purchases.push({ id, cost: unlockCost(id), afterGame: state.games.length, date: new Date().toISOString().slice(0, 10) });
+      state.purchases.push({ pid: 'p' + newId(), id, cost: unlockCost(id), afterGame: state.games.length, date: new Date().toISOString().slice(0, 10) });
     } else {
       delete state.unlocked[id];
       const i = state.purchases.map((p) => p.id).lastIndexOf(id);
@@ -383,11 +395,13 @@
     dialogPhotos = [];
     if (editing >= 0) {
       const old = state.games[editing];
+      g.id = old.id || 'g' + newId(); g.at = old.at || new Date().toISOString();
       if (old.summary) g.summary = old.summary;
       if (old.contracts) g.contracts = old.contracts;
       state.games[editing] = g;
     } else {
       if (fromBattle && pendingSummary) { g.summary = pendingSummary; g.contracts = pendingSummary.contracts; }
+      g.id = 'g' + newId(); g.at = new Date().toISOString();
       state.games.push(g);
       applyScaleRule();
     }
@@ -413,7 +427,7 @@
     const n = num($('#when-select').value);
     state.purchases = state.purchases || [];
     if (whenTarget.idx != null) state.purchases[whenTarget.idx].afterGame = n;
-    else state.purchases.push({ id: whenTarget.id, cost: unlockCost(whenTarget.id), afterGame: n, date: '' });
+    else state.purchases.push({ pid: 'p' + newId(), id: whenTarget.id, cost: unlockCost(whenTarget.id), afterGame: n, date: '' });
     whenDlg.close(); save(); renderGames();
   });
   $('#when-cancel').addEventListener('click', () => whenDlg.close());
@@ -1130,6 +1144,7 @@
   function replaceState(next) {
     state = Object.assign(blankState(), next);
     movePurchaseText(state.games);
+    addIds(state);
     addHouseRules(state);
     state.unlocked = state.unlocked || {};
     state.games = Array.isArray(state.games) ? state.games : [];
@@ -1215,6 +1230,7 @@
       capital: { total: c.total, avail: c.avail }, unlocked: Object.keys(state.unlocked),
       games: state.games.map((g) => ({ scale: g.scale, opp: g.opp, win: g.win, credits: g.credits, rep: g.rep, boughtRep: !!g.boughtRep, date: g.date })),
       purchases: state.purchases || [],
+      teamNames: state.team && state.team.code ? Object.values(state.team.names || {}) : undefined,
     };
   }
   function rivalStatus(msg, err) { const el = $('#rival-status'); el.textContent = msg; el.classList.toggle('err', !!err); }
@@ -1278,7 +1294,7 @@
         <div class="item">
           <span class="rank-n">${i + 1}</span>
           <span class="name">${esc(r.corp || 'Unnamed corporation')}${r.me ? ' <span class="badge own">YOU</span>' : r.online ? ' <span class="badge online">ONLINE</span>' : ''}
-            <small>${r.ceo ? esc(r.ceo) + ' · ' : ''}${games.length} game${games.length === 1 ? '' : 's'} · ${wins} win${wins === 1 ? '' : 's'} · ${r.capital ? r.capital.total : 0} capital earned</small></span>
+            <small>${r.teamNames && r.teamNames.length > 1 ? 'Team: ' + r.teamNames.map(esc).join(' & ') + ' · ' : r.ceo ? esc(r.ceo) + ' · ' : ''}${games.length} game${games.length === 1 ? '' : 's'} · ${wins} win${wins === 1 ? '' : 's'} · ${r.capital ? r.capital.total : 0} capital earned</small></span>
           <span class="rep-n">${r.rep || 0}<small>rep</small></span>
           ${r.me ? '<span class="chev-spacer"></span>' : `<button type="button" class="chevbtn" data-rival="${esc(r.corpId)}" aria-expanded="${open}" aria-label="Details for ${esc(r.corp || 'rival')}">${CHEVRON}</button>`}
         </div>
@@ -1634,11 +1650,18 @@
     const key = JSON.stringify(Object.assign({}, p, { sharedAt: '' }));
     if (!force && key === lastPushed) return;
     await authToken();
-    await api('PATCH', corpPath(), { fields: {
-      owner: { stringValue: state.sync.uid },
+    const fields = {
       data: { stringValue: JSON.stringify(p) },
       updatedAt: { timestampValue: new Date().toISOString() },
-    } });
+      team: { stringValue: (state.team && state.team.code) || '' },
+    };
+    try {
+      await api('PATCH', corpPath() + '?updateMask.fieldPaths=data&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=team&currentDocument.exists=true', { fields });
+    } catch (err) {
+      // Not created yet (Firestore answers an update of a missing document with 404, 400 or 403): create it.
+      if (![400, 403, 404].includes(err.status)) throw err;
+      await api('PATCH', corpPath() + '?currentDocument.exists=false', { fields: Object.assign({ owner: { stringValue: state.sync.uid } }, fields) });
+    }
     lastPushed = key;
   }
   async function syncPull() {
@@ -1929,13 +1952,269 @@
     }
   });
 
+  // ---------- team corporations (shared between teammates' phones) ----------
+  // The shared part of the campaign lives in teams/{code}. Each phone keeps the last synced copy
+  // ("base") so a sync can merge both sides' changes instead of one phone overwriting the other.
+  const TEAM_FIELDS = ['corp', 'ceo', 'startDate', 'campScale', 'scaleRule', 'unlocked', 'games', 'purchases', 'summary', 'notes', 'houseRulesAdded'];
+  const inTeam = () => syncReady() && !!(state.team && state.team.code);
+  let teamTimer = null, teamSyncing = false;
+
+  function sharedOf(st) {
+    const out = {};
+    TEAM_FIELDS.forEach((f) => { out[f] = st[f] === undefined ? null : st[f]; });
+    out.games = (st.games || []).map((g) => { const c = Object.assign({}, g); delete c.photos; return c; });   // photos stay on each phone
+    out.onlineCode = (st.sync && st.sync.code) || '';
+    return JSON.parse(JSON.stringify(out));
+  }
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+  // Three-way merge of lists of records by key: keeps additions from both sides, applies deletions,
+  // and prefers whichever side actually changed a record.
+  function mergeList(base, local, remote, key) {
+    const map = (arr) => new Map((arr || []).map((x) => [x[key], x]));
+    const B = map(base), L = map(local), R = map(remote);
+    const ids = [];
+    (remote || []).forEach((x) => ids.push(x[key]));
+    (local || []).forEach((x) => { if (!R.has(x[key])) ids.push(x[key]); });
+    const out = [];
+    ids.forEach((id) => {
+      const b = B.get(id), l = L.get(id), r = R.get(id);
+      if (b && !l) { if (r && !same(r, b)) out.push(r); return; }      // deleted here, unless changed there
+      if (b && !r) { if (l && !same(l, b)) out.push(l); return; }      // deleted there, unless changed here
+      if (l && r) { out.push(!same(l, b) ? l : r); return; }
+      out.push(l || r);
+    });
+    return out;
+  }
+  function mergeShared(base, local, remote) {
+    base = base || {};
+    const out = {};
+    Object.keys(Object.assign({}, local, remote)).forEach((f) => {
+      const b = base[f], l = local[f], r = remote[f];
+      if (f === 'games') {
+        out.games = mergeList(b, l, r, 'id').sort((x, y) => String(x.at || '').localeCompare(String(y.at || '')));
+      } else if (f === 'purchases') {
+        out.purchases = mergeList(b, l, r, 'pid');
+      } else if (f === 'unlocked') {
+        const set = (o) => new Set(Object.keys(o || {}));
+        const B = set(b), L = set(l), R = set(r);
+        const res = {};
+        R.forEach((k) => { if (!(B.has(k) && !L.has(k))) res[k] = true; });   // remote, minus local removals
+        L.forEach((k) => { if (!B.has(k)) res[k] = true; });                   // plus local additions
+        out.unlocked = res;
+      } else if (f === 'notes' && !same(l, b) && !same(r, b) && !same(l, r)) {
+        out.notes = (r || '') + '\n\n' + (l || '');                            // both edited: keep both
+      } else {
+        out[f] = !same(l, b) && same(r, b) ? l : r;                           // whoever changed it; remote wins ties
+      }
+    });
+    return out;
+  }
+  function applyShared(merged) {
+    const photos = new Map(state.games.map((g) => [g.id, g.photos]));
+    TEAM_FIELDS.forEach((f) => { if (merged[f] !== undefined) state[f] = merged[f] === null ? (f === 'unlocked' ? {} : f === 'games' || f === 'purchases' ? [] : '') : merged[f]; });
+    state.games = (merged.games || []).map((g) => Object.assign({}, g, photos.get(g.id) ? { photos: photos.get(g.id) } : {}));
+    store(STORE_KEY, state);
+    renderAll();
+    schedulePush();
+    if (merged.onlineCode && !joined()) joinCampaign(merged.onlineCode);
+  }
+
+  const teamPath = (code) => 'teams/' + encodeURIComponent(code || state.team.code);
+  const myTeamName = () => (state.sync && state.sync.name) || state.ceo || 'Teammate';
+  function readTeamDoc(d) {
+    const f = d.fields || {};
+    const names = {};
+    Object.entries((f.names && f.names.mapValue && f.names.mapValue.fields) || {}).forEach(([k, v]) => { names[k] = v.stringValue; });
+    return {
+      shared: JSON.parse(f.data.stringValue),
+      members: ((f.members && f.members.arrayValue && f.members.arrayValue.values) || []).map((v) => v.stringValue),
+      names, updateTime: d.updateTime,
+    };
+  }
+
+  async function teamSync() {
+    if (!inTeam() || teamSyncing) return;
+    // Don't swap data under someone who is typing; try again shortly.
+    const ae = document.activeElement;
+    if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName) && !ae.closest('dialog')) { scheduleTeamSync(); return; }
+    teamSyncing = true;
+    try {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const remote = readTeamDoc(await api('GET', teamPath()));
+        if (!remote.members.includes(state.sync.uid)) throw Object.assign(new Error('not-member'), { status: 403 });
+        state.team.names = remote.names;
+        const local = sharedOf(state);
+        const base = state.team.base ? JSON.parse(state.team.base) : remote.shared;
+        const merged = mergeShared(base, local, remote.shared);
+        if (!same(merged, local)) applyShared(merged);
+        if (same(merged, remote.shared)) {
+          state.team.base = JSON.stringify(merged); state.team.updateTime = remote.updateTime;
+          break;
+        }
+        try {
+          const res = await api('PATCH', teamPath() + '?updateMask.fieldPaths=data&updateMask.fieldPaths=updatedAt&currentDocument.updateTime=' + encodeURIComponent(remote.updateTime),
+            { fields: { data: { stringValue: JSON.stringify(merged) }, updatedAt: { timestampValue: new Date().toISOString() } } });
+          state.team.base = JSON.stringify(merged); state.team.updateTime = res && res.updateTime;
+          break;
+        } catch (err) {
+          if (![400, 409].includes(err.status)) throw err;     // a teammate saved first: fetch again and re-merge
+        }
+      }
+      state.team.lastSync = new Date().toISOString(); state.team.error = '';
+    } catch (err) {
+      state.team.error = err.message === 'not-member' ? 'You’re no longer on this team.' : syncError(err);
+    }
+    teamSyncing = false;
+    store(STORE_KEY, state);
+    renderTeam();
+  }
+  function scheduleTeamSync() {
+    if (!inTeam()) return;
+    clearTimeout(teamTimer);
+    teamTimer = setTimeout(teamSync, 3000);
+  }
+
+  function newTeamCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const v = crypto.getRandomValues(new Uint8Array(8));
+    const s = Array.from(v, (x) => chars[x % chars.length]).join('');
+    return 'TEAM-' + s.slice(0, 4) + '-' + s.slice(4);
+  }
+  async function createTeam() {
+    await authToken();
+    const code = newTeamCode();
+    const shared = sharedOf(state);
+    await api('PATCH', teamPath(code) + '?currentDocument.exists=false', { fields: {
+      members: { arrayValue: { values: [{ stringValue: state.sync.uid }] } },
+      names: { mapValue: { fields: { [state.sync.uid]: { stringValue: myTeamName() } } } },
+      corpId: { stringValue: state.corpId },
+      data: { stringValue: JSON.stringify(shared) },
+      updatedAt: { timestampValue: new Date().toISOString() },
+    } });
+    state.team = { code, base: JSON.stringify(shared), names: { [state.sync.uid]: myTeamName() }, lastSync: new Date().toISOString() };
+    lastPushed = '';
+    save(); renderTeam();
+    if (joined()) syncNow(true);
+  }
+  async function joinTeam(code) {
+    await authToken();
+    const uid = state.sync.uid;
+    const docName = 'projects/' + SYNC_CONFIG.projectId + '/databases/(default)/documents/' + teamPath(code);
+    const r = await fetch('https://firestore.googleapis.com/v1/projects/' + SYNC_CONFIG.projectId + '/databases/(default)/documents:commit', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + (await authToken()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ writes: [{
+        update: { name: docName, fields: { names: { mapValue: { fields: { [uid]: { stringValue: myTeamName() } } } } } },
+        updateMask: { fieldPaths: ['names.`' + uid + '`'] },
+        updateTransforms: [{ fieldPath: 'members', appendMissingElements: { values: [{ stringValue: uid }] } }],
+        currentDocument: { exists: true },
+      }] }),
+    });
+    if (!r.ok) throw Object.assign(new Error(r.status === 404 ? 'no-team' : 'join'), { status: r.status });
+    const d = await api('GET', teamPath(code));
+    const team = readTeamDoc(d);
+    const corpId = d.fields.corpId.stringValue;
+    // This phone's own online corporation (if any) gives way to the team's.
+    if (joined() && state.corpId !== corpId) { try { await api('DELETE', corpPath()); } catch (err) { /* not ours or gone */ } }
+    state.corpId = corpId;
+    state.team = { code, base: JSON.stringify(team.shared), names: team.names, updateTime: team.updateTime };
+    lastPushed = '';
+    applyShared(team.shared);
+    state.team.lastSync = new Date().toISOString();
+    save(); renderTeam();
+    if (joined()) syncNow(true);
+  }
+  async function leaveTeam() {
+    const d = readTeamDoc(await api('GET', teamPath()));
+    const uid = state.sync.uid;
+    const members = d.members.filter((m) => m !== uid);
+    if (!members.length) {
+      // Last one out: remove the team's corporation from the online campaign, then the team itself.
+      if (joined()) { try { await api('DELETE', corpPath()); } catch (err) { /* already gone */ } }
+      await api('DELETE', teamPath());
+    } else {
+      const names = {}; Object.entries(d.names).forEach(([k, v]) => { if (k !== uid) names[k] = { stringValue: v }; });
+      await api('PATCH', teamPath() + '?updateMask.fieldPaths=members&updateMask.fieldPaths=names', { fields: {
+        members: { arrayValue: { values: members.map((m) => ({ stringValue: m })) } },
+        names: { mapValue: { fields: names } },
+      } });
+    }
+    // Keep a copy on this phone as a separate corporation from now on.
+    state.corpId = newId(); lastPushed = '';
+    state.team = null;
+    save(); renderTeam(); renderAll();
+    if (joined()) syncNow(true);
+  }
+
+  function setTeamMsg(t) { const el = $('#team-msg'); if (el) el.textContent = t; }
+  function renderTeam() {
+    const box = $('#team-box');
+    if (!syncReady()) { box.hidden = true; return; }
+    box.hidden = false;
+    if (!inTeam()) {
+      box.innerHTML = `<p class="hint small">Playing as a team? Teammates share one corporation, and either phone can log games and buy unlocks.</p>
+        <div class="online-join">
+          <button type="button" class="btn" id="btn-team-create">Make this a team corporation</button>
+          <form id="team-join-form" class="online-join-form"><input type="text" name="code" placeholder="TEAM-XXXX-XXXX" autocapitalize="characters" autocomplete="off" aria-label="Team code" required><button type="submit" class="btn">Join team</button></form>
+        </div><p class="status" id="team-msg"></p>`;
+      return;
+    }
+    const t = state.team;
+    const names = Object.values(t.names || {});
+    box.innerHTML = `<div class="online-on">
+        <div><span class="dot ${t.error ? 'bad' : ''}"></span>Team corporation <b>${esc(t.code)}</b>
+          <small>CEOs: ${names.length ? names.map(esc).join(' & ') : '—'} · ${t.error ? esc(t.error) : 'synced ' + ago(t.lastSync)}</small></div>
+        <div class="online-btns">
+          <button type="button" class="btn sm" id="btn-team-share">Share code</button>
+          <button type="button" class="btn sm" id="btn-team-sync">Sync now</button>
+          <button type="button" class="btn sm danger" id="btn-team-leave">Leave team</button>
+        </div></div><p class="status" id="team-msg"></p>`;
+  }
+  $('#team-box').addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    try {
+      if (b.id === 'btn-team-create') {
+        if (!confirm('Make “' + (state.corp || 'this corporation') + '” a team corporation? You’ll get a code for your teammate to join with.')) return;
+        setTeamMsg('Creating team…');
+        await createTeam();
+        setTeamMsg('Team created. Share the code with your teammate.');
+      } else if (b.id === 'btn-team-sync') {
+        setTeamMsg('Syncing…'); await teamSync(); setTeamMsg('');
+      } else if (b.id === 'btn-team-share') {
+        const text = 'Join our team corporation in ABS Companion: Overview > Team > Join team, code ' + state.team.code + '\n' + location.origin + location.pathname;
+        if (navigator.share) { await navigator.share({ text }); } else { await navigator.clipboard.writeText(state.team.code); setTeamMsg('Code copied: ' + state.team.code); }
+      } else if (b.id === 'btn-team-leave') {
+        if (!confirm('Leave team ' + state.team.code + '? Your teammates keep the team corporation; this phone keeps a copy as its own separate corporation.')) return;
+        await leaveTeam();
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      setTeamMsg(syncError(err));
+    }
+  });
+  $('#team-box').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = e.target.code.value.trim().toUpperCase().replace(/\s+/g, '');
+    if (!/^TEAM-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) { setTeamMsg('That doesn’t look like a team code (TEAM-XXXX-XXXX).'); return; }
+    const hasOwn = state.games.length || Object.keys(state.unlocked).length;
+    if (hasOwn && !confirm('Joining replaces this phone’s corporation (' + (state.corp || 'unnamed') + ') with the team’s. Export a backup first if you want to keep it. Join?')) return;
+    setTeamMsg('Joining…');
+    try { await joinTeam(code); setTeamMsg('Joined the team.'); }
+    catch (err) { setTeamMsg(err.message === 'no-team' ? 'No team found with that code.' : syncError(err)); }
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') teamSync(); });
+  setInterval(() => { if (document.visibilityState === 'visible') teamSync(); }, 45000);
+
   // ---------- boot ----------
   $('#b-dmg-rules').textContent = DAMAGE_RULES;
   function renderAll() { renderBound(); renderUnlocks(); renderGames(); renderShips(); renderBattle(); renderStatus(); }
   renderAll();
   renderOnline();
   renderAccount();
+  renderTeam();
   syncNow(true);
+  teamSync();
   showTab($('[data-view="' + prefs.tab + '"]') ? prefs.tab : 'overview');
 
   // ---------- updates ----------
