@@ -57,8 +57,14 @@
       </div>
     </div>
 
+    <details class="fold statsbox" id="stats-wrap-ov" hidden>
+      <summary>Campaign stats</summary>
+      <div id="campaign-stats-ov"></div>
+    </details>
+
     <h2 class="sect">Rivals</h2>
-    <p class="hint small">Share your corporation as a file (Messages, Discord, email…). Add the files your rivals send you to compare standings and see their fleets.</p>
+    <div id="online-box" class="online-box"></div>
+    <p class="hint small">Or share by file (Messages, Discord, email…) and add the files rivals send you.</p>
     <div class="btns two rival-btns">
       <button class="btn primary" type="button" id="btn-share-corp">Share my corporation</button>
       <button class="btn" type="button" id="btn-add-rival">Add rival from file</button>
@@ -339,6 +345,7 @@
 <script src="contracts.js"></script>
 <script src="fleet.js"></script>
 <script src="glossary.js"></script>
+<script src="sync-config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

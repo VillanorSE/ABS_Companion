@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.17.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.18.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -80,6 +80,7 @@
   function save() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => store(STORE_KEY, state), 250);
+    try { schedulePush(); } catch (err) { /* online sync not ready yet */ }
   }
   function savePrefs() { store(PREFS_KEY, prefs); }
 
@@ -209,17 +210,13 @@
       <span class="cost">${o.cost}</span>${buy ? `<button type="button" class="btn sm" data-buy="${o.id}">Buy</button>` : ''}</div>`;
     const byCost = (x, y) => x.cost - y.cost;
     const split = (items) => [items.filter((o) => o.cost <= avail).sort(byCost), items.filter((o) => o.cost > avail).sort(byCost)];
-    const [shipsNow, shipsLater] = split(ships), [advsNow, advsLater] = split(advs);
-    const group = (title, items, buy, empty) => `<div class="buy-group ${buy ? '' : 'later-group'}"><h4>${title}</h4>
-      ${items.length ? items.map((o) => row(o, buy)).join('') : `<p class="none">${empty}</p>`}</div>`;
-    const later = shipsLater.length + advsLater.length;
+    const [shipsNow] = split(ships), [advsNow] = split(advs);
+    const group = (title, items, empty) => `<div class="buy-group"><h4>${title}</h4>
+      ${items.length ? items.map((o) => row(o, true)).join('') : `<p class="none">${empty}</p>`}</div>`;
     $('#buynow-count').textContent = '(' + (shipsNow.length + advsNow.length) + ')';
     $('#buynow-list').innerHTML =
-      group('Ship classes', shipsNow, true, 'No ship classes affordable right now.') +
-      group('Competitive advantages', advsNow, true, 'No advantages available right now.') +
-      (later ? `<p class="later-h">Need more capital</p>` +
-        (shipsLater.length ? group('Ship classes', shipsLater, false) : '') +
-        (advsLater.length ? group('Competitive advantages', advsLater, false) : '') : '') +
+      group('Ship classes', shipsNow, 'No ship classes affordable right now.') +
+      group('Competitive advantages', advsNow, 'No advantages available right now.') +
       '<p class="hint small">Only one Level 0 advantage, and you may research one advantage per campaign game.</p>';
   }
   $('#buynow-list').addEventListener('click', (e) => {
@@ -1280,18 +1277,18 @@
       return `<div class="item-wrap standing ${r.me ? 'me' : ''} ${open ? 'open' : ''}">
         <div class="item">
           <span class="rank-n">${i + 1}</span>
-          <span class="name">${esc(r.corp || 'Unnamed corporation')}${r.me ? ' <span class="badge own">YOU</span>' : ''}
+          <span class="name">${esc(r.corp || 'Unnamed corporation')}${r.me ? ' <span class="badge own">YOU</span>' : r.online ? ' <span class="badge online">ONLINE</span>' : ''}
             <small>${r.ceo ? esc(r.ceo) + ' · ' : ''}${games.length} game${games.length === 1 ? '' : 's'} · ${wins} win${wins === 1 ? '' : 's'} · ${r.capital ? r.capital.total : 0} capital earned</small></span>
           <span class="rep-n">${r.rep || 0}<small>rep</small></span>
           ${r.me ? '<span class="chev-spacer"></span>' : `<button type="button" class="chevbtn" data-rival="${esc(r.corpId)}" aria-expanded="${open}" aria-label="Details for ${esc(r.corp || 'rival')}">${CHEVRON}</button>`}
         </div>
         ${r.me ? '' : `<div class="expand-body rival-body" ${open ? '' : 'hidden'}>
-          <p class="hint small">Shared ${esc((r.sharedAt || '').slice(0, 10))}. Ask them to share again for the latest.</p>
+          <p class="hint small">${r.online ? 'From the online campaign · updated ' + esc((r.sharedAt || '').slice(0, 10)) : 'Shared ' + esc((r.sharedAt || '').slice(0, 10)) + '. Ask them to share again for the latest.'}</p>
           <p><b>Ship classes:</b> ${ships.map(esc).join(', ')}</p>
           <p><b>Advantages:</b> ${advs.length ? advs.map(esc).join(', ') : 'none'}</p>
           ${games.length ? `<p><b>Recent games:</b> ${games.slice(-3).reverse().map((g) => [g.opp ? 'vs ' + g.opp : '', g.win, g.credits !== '' && g.credits != null ? g.credits + ' cr' : ''].filter(Boolean).map(esc).join(' ')).join(' · ')}</p>` : ''}
           <div class="btns two"><button type="button" class="btn" data-rival-fleet="${esc(r.corpId)}">View their fleet stats</button>
-            <button type="button" class="btn danger" data-rival-del="${esc(r.corpId)}">Remove</button></div>
+            ${r.online ? '' : `<button type="button" class="btn danger" data-rival-del="${esc(r.corpId)}">Remove</button>`}</div>
         </div>`}
       </div>`;
     }).join('')}</div>`;
@@ -1374,8 +1371,10 @@
   // ---------- campaign stats ----------
   function renderCampaignStats() {
     const games = state.games;
-    const box = $('#campaign-stats');
+    const boxes = [$('#campaign-stats'), $('#campaign-stats-ov')];
     $('#stats-wrap').hidden = !games.length;
+    $('#stats-wrap-ov').hidden = !games.length;
+    const box = { set innerHTML(h) { boxes.forEach((b) => { b.innerHTML = h; }); } };
     if (!games.length) { box.innerHTML = ''; return; }
     const res = (w) => games.filter((g) => g.win === w).length;
     const wins = res('Win'), losses = res('Loss'), draws = res('Draw');
@@ -1585,10 +1584,189 @@
     window.print();
   });
 
+  // ---------- online campaign (Firebase anonymous sign-in + Firestore REST API) ----------
+  // Each player's corporation is a document at campaigns/{code}/corps/{corpId}, holding the same
+  // data as a share file. Players who join the same code see each other as rivals.
+  const syncReady = () => typeof SYNC_CONFIG !== 'undefined' && !!(SYNC_CONFIG.apiKey && SYNC_CONFIG.projectId);
+  const joined = () => syncReady() && !!(state.sync && state.sync.code);
+  let idToken = null, idTokenExp = 0, syncing = false, lastPushed = '', pushTimer = null;
+
+  async function authToken() {
+    state.sync = state.sync || {};
+    const s = state.sync;
+    if (idToken && Date.now() < idTokenExp - 60000) return idToken;
+    if (s.refreshToken) {
+      const r = await fetch('https://securetoken.googleapis.com/v1/token?key=' + SYNC_CONFIG.apiKey, {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(s.refreshToken),
+      });
+      if (r.ok) {
+        const j = await r.json();
+        idToken = j.id_token; idTokenExp = Date.now() + j.expires_in * 1000;
+        s.uid = j.user_id; s.refreshToken = j.refresh_token; save();
+        return idToken;
+      }
+    }
+    const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + SYNC_CONFIG.apiKey, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ returnSecureToken: true }),
+    });
+    if (!r.ok) throw Object.assign(new Error('sign-in'), { status: r.status });
+    const j = await r.json();
+    idToken = j.idToken; idTokenExp = Date.now() + j.expiresIn * 1000;
+    s.uid = j.localId; s.refreshToken = j.refreshToken; save();
+    return idToken;
+  }
+  async function api(method, path, body) {
+    const t = await authToken();
+    const url = 'https://firestore.googleapis.com/v1/projects/' + SYNC_CONFIG.projectId + '/databases/(default)/documents/' + path;
+    const r = await fetch(url, {
+      method, headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!r.ok) throw Object.assign(new Error('sync'), { status: r.status });
+    return r.status === 204 ? null : r.json().catch(() => null);
+  }
+  const corpPath = () => 'campaigns/' + encodeURIComponent(state.sync.code) + '/corps/' + encodeURIComponent(state.corpId);
+
+  async function syncPush(force) {
+    if (!joined()) return;
+    const p = sharePayload();
+    const key = JSON.stringify(Object.assign({}, p, { sharedAt: '' }));
+    if (!force && key === lastPushed) return;
+    await authToken();
+    await api('PATCH', corpPath(), { fields: {
+      owner: { stringValue: state.sync.uid },
+      data: { stringValue: JSON.stringify(p) },
+      updatedAt: { timestampValue: new Date().toISOString() },
+    } });
+    lastPushed = key;
+  }
+  async function syncPull() {
+    if (!joined()) return;
+    const j = await api('GET', 'campaigns/' + encodeURIComponent(state.sync.code) + '/corps?pageSize=100');
+    const online = {};
+    ((j && j.documents) || []).forEach((d) => {
+      try {
+        const p = JSON.parse(d.fields.data.stringValue);
+        if (p && p.type === SHARE_TYPE && p.corpId && p.corpId !== state.corpId) online[p.corpId] = Object.assign(p, { online: true });
+      } catch (err) { /* skip bad document */ }
+    });
+    const rivals = {};
+    Object.values(state.rivals || {}).forEach((r) => { if (!r.online && !online[r.corpId]) rivals[r.corpId] = r; });
+    state.rivals = Object.assign(rivals, online);
+  }
+  function syncError(err) {
+    if (!navigator.onLine) return 'Offline. Will sync when you’re back online.';
+    if (err && err.status === 403) return 'The online campaign refused the update (permissions). Check the Firebase rules, or rejoin on this device.';
+    if (err && err.status === 400 && err.message === 'sign-in') return 'Couldn’t sign in to the online campaign. Is anonymous sign-in enabled in Firebase?';
+    return 'Couldn’t reach the online campaign. Try “Sync now” in a moment.';
+  }
+  async function syncNow(quiet) {
+    if (!joined() || syncing) return;
+    syncing = true;
+    if (!quiet) setOnlineMsg('Syncing…');
+    try {
+      await syncPush(true);
+      await syncPull();
+      state.sync.lastSync = new Date().toISOString();
+      state.sync.error = '';
+    } catch (err) {
+      state.sync.error = syncError(err);
+    }
+    syncing = false;
+    save(); renderStandings(); renderShips(); renderOnline();
+  }
+  // Push changes a few seconds after they happen (games logged, unlocks bought, etc.).
+  function schedulePush() {
+    if (!joined()) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => { syncPush(false).catch(() => {}); }, 4000);
+  }
+
+  function newCampaignCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const v = crypto.getRandomValues(new Uint8Array(8));
+    const s = Array.from(v, (x) => chars[x % chars.length]).join('');
+    return 'ABS-' + s.slice(0, 4) + '-' + s.slice(4);
+  }
+  function setOnlineMsg(t) { const el = $('#online-msg'); if (el) el.textContent = t; }
+  function ago(iso) {
+    if (!iso) return 'never';
+    const m = Math.round((Date.now() - new Date(iso)) / 60000);
+    return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : new Date(iso).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+  }
+  function renderOnline() {
+    const box = $('#online-box');
+    if (!syncReady()) {
+      box.innerHTML = '<p class="hint small">Online campaigns aren’t switched on for this app yet (a one-time Firebase setup; see the README).</p>';
+      return;
+    }
+    if (!joined()) {
+      box.innerHTML = `<p class="hint small">Online: everyone joins the same campaign code and standings update automatically.</p>
+        <div class="online-join">
+          <button type="button" class="btn primary" id="btn-online-start">Start online campaign</button>
+          <form id="online-join-form" class="online-join-form"><input type="text" name="code" placeholder="ABS-XXXX-XXXX" autocapitalize="characters" autocomplete="off" aria-label="Campaign code" required><button type="submit" class="btn">Join</button></form>
+        </div>
+        <p class="status" id="online-msg"></p>`;
+      return;
+    }
+    const s = state.sync;
+    box.innerHTML = `<div class="online-on">
+        <div><span class="dot ${s.error ? 'bad' : ''}"></span>Online campaign <b>${esc(s.code)}</b>
+          <small>${s.error ? esc(s.error) : 'Synced ' + ago(s.lastSync)}</small></div>
+        <div class="online-btns">
+          <button type="button" class="btn sm" id="btn-online-share">Share code</button>
+          <button type="button" class="btn sm" id="btn-online-sync">Sync now</button>
+          <button type="button" class="btn sm danger" id="btn-online-leave">Leave</button>
+        </div></div>
+      <p class="status" id="online-msg"></p>`;
+  }
+  async function joinCampaign(code) {
+    state.sync = Object.assign(state.sync || {}, { code, error: '', lastSync: '' });
+    lastPushed = '';
+    renderOnline();
+    await syncNow();
+  }
+  $('#online-box').addEventListener('click', async (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    if (t.id === 'btn-online-start') {
+      if (!state.corp && !confirm('Your corporation has no name yet. Start anyway?')) return;
+      await joinCampaign(newCampaignCode());
+    } else if (t.id === 'btn-online-sync') {
+      await syncNow();
+    } else if (t.id === 'btn-online-share') {
+      const text = 'Join my A Billion Suns campaign in ABS Companion: Overview > Rivals > Join, code ' + state.sync.code + '\n' + location.origin + location.pathname;
+      try {
+        if (navigator.share) { await navigator.share({ text }); return; }
+        await navigator.clipboard.writeText(state.sync.code);
+        setOnlineMsg('Code copied: ' + state.sync.code);
+      } catch (err) { if (!err || err.name !== 'AbortError') setOnlineMsg('Code: ' + state.sync.code); }
+    } else if (t.id === 'btn-online-leave') {
+      if (!confirm('Leave online campaign ' + state.sync.code + '? Rivals from it will be removed from this phone.')) return;
+      const remove = confirm('Also remove your corporation from the online campaign, so others stop seeing it?');
+      if (remove) { try { await api('DELETE', corpPath()); } catch (err) { /* already gone or offline */ } }
+      Object.keys(state.rivals || {}).forEach((id) => { if (state.rivals[id].online) delete state.rivals[id]; });
+      state.sync.code = ''; state.sync.error = '';
+      save(); renderOnline(); renderStandings(); renderShips();
+    }
+  });
+  $('#online-box').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = e.target.code.value.trim().toUpperCase().replace(/\s+/g, '');
+    if (!/^ABS-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) { setOnlineMsg('That doesn’t look like a campaign code (ABS-XXXX-XXXX).'); return; }
+    await joinCampaign(code);
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(true); });
+  window.addEventListener('online', () => syncNow(true));
+  setInterval(() => { if (document.visibilityState === 'visible' && prefs.tab === 'overview') syncNow(true); }, 60000);
+
   // ---------- boot ----------
   $('#b-dmg-rules').textContent = DAMAGE_RULES;
   function renderAll() { renderBound(); renderUnlocks(); renderGames(); renderShips(); renderBattle(); renderStatus(); }
   renderAll();
+  renderOnline();
+  syncNow(true);
   showTab($('[data-view="' + prefs.tab + '"]') ? prefs.tab : 'overview');
 
   // ---------- updates ----------

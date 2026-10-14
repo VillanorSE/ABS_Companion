@@ -1,0 +1,22 @@
+rules_version = '2';
+// Paste these into Firebase console > Firestore Database > Rules, then Publish.
+// Each corporation is one document inside a campaign; anyone signed in (anonymously)
+// who knows the campaign code can read it, but only the device that created a
+// corporation's document can change or delete it. Campaign codes can't be listed.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /campaigns/{code}/corps/{corpId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 200000;
+      allow update: if request.auth != null
+        && resource.data.owner == request.auth.uid
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 200000;
+      allow delete: if request.auth != null && resource.data.owner == request.auth.uid;
+    }
+  }
+}
