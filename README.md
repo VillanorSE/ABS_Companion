@@ -30,10 +30,13 @@ Online campaigns use a free Google Firebase project that the group owns. Until i
 3. **Build → Firestore Database → Create database** → pick a location near you → **Start in production mode**.
 4. In Firestore, open the **Rules** tab, replace everything with the contents of `firestore.rules` from this repo, and **Publish**.
 5. **Project settings** (gear icon) → **Your apps** → the web icon `</>` → register an app (any nickname, no hosting). Copy `apiKey` and `projectId` from the config it shows into `sync-config.js`.
+6. Optional Google sign-in (cloud backup, keeping your corporation across phones): **Authentication → Sign-in method → Google → Enable**, copy the **Web client ID** into `googleClientId` in `sync-config.js`, add your Pages domain under **Authentication → Settings → Authorized domains**, and add it (`https://<you>.github.io`) to **Authorized JavaScript origins** of the auto-created OAuth web client in Google Cloud → APIs & Services → Credentials.
+
+Console menus move around; the direct pages are `console.firebase.google.com/project/<projectId>/authentication/providers`, `/firestore`, `/firestore/rules` and `/settings/general`.
 
 Then commit and push. One player taps **Overview → Rivals → Start online campaign** and shares the code; everyone else taps **Join** with that code.
 
-How it works: each corporation is one document under `campaigns/{code}/corps/`. Phones sign in anonymously, so nobody needs an account. Anyone who knows the code can read that campaign, but only the phone that created a corporation can change or remove it. The sign-in travels with **Export backup**, so moving to a new phone keeps your corporation. Firebase's free tier is far more than a gaming group needs.
+How it works: each corporation is one document under `campaigns/{code}/corps/`. Phones sign in anonymously, so nobody needs an account; signing in with Google is optional and links to that same account, adding a cloud backup under `users/{uid}/backup/` (photos stay on the phone). Anyone who knows the code can read that campaign, but only the phone that created a corporation can change or remove it. The sign-in travels with **Export backup**, so moving to a new phone keeps your corporation. Firebase's free tier is far more than a gaming group needs.
 
 `ABS_Campaign_Tracker.html` is the printable tracker. A filled-in "Save a copy" file from it can be imported into the app.
 

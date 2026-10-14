@@ -578,3 +578,7 @@ dialog.tall:not([open]){display:none;}
 .dot.bad{background:var(--bad);}
 .badge.online{color:var(--aux);border:1px solid var(--aux);}
 .online-box .status{margin:6px 0 0;}
+
+/* 0.19: Google sign-in */
+.gsi-btn{min-height:44px;display:flex;justify-content:center;}
+#gsi-btn iframe{color-scheme:normal;}

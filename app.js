@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.18.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.19.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -80,7 +80,7 @@
   function save() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => store(STORE_KEY, state), 250);
-    try { schedulePush(); } catch (err) { /* online sync not ready yet */ }
+    try { schedulePush(); scheduleBackup(); } catch (err) { /* online sync not ready yet */ }
   }
   function savePrefs() { store(PREFS_KEY, prefs); }
 
@@ -1761,11 +1761,180 @@
   window.addEventListener('online', () => syncNow(true));
   setInterval(() => { if (document.visibilityState === 'visible' && prefs.tab === 'overview') syncNow(true); }, 60000);
 
+  // ---------- Google sign-in (optional) and cloud backup ----------
+  // Phones start with an invisible anonymous account. Signing in with Google links it, keeping the
+  // same account id (so online corporations stay yours), and turns on cloud backup of the campaign.
+  const googleReady = () => syncReady() && !!SYNC_CONFIG.googleClientId;
+  const signedIn = () => !!(state.sync && state.sync.provider === 'google' && state.sync.refreshToken);
+  let gsiLoading = null, backupTimer = null;
+
+  function loadGsi() {
+    if (window.google && google.accounts && google.accounts.id) return Promise.resolve();
+    if (gsiLoading) return gsiLoading;
+    gsiLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      s.onload = resolve;
+      s.onerror = () => { gsiLoading = null; reject(new Error('gsi')); };
+      document.head.appendChild(s);
+    });
+    return gsiLoading;
+  }
+
+  async function idpSignIn(googleJwt, linkToken) {
+    const body = {
+      postBody: 'id_token=' + encodeURIComponent(googleJwt) + '&providerId=google.com',
+      requestUri: location.origin, returnSecureToken: true, returnIdpCredential: true,
+    };
+    if (linkToken) body.idToken = linkToken;
+    const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=' + SYNC_CONFIG.apiKey, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({}));
+    const err = (j.error && j.error.message) || j.errorMessage || (j.needConfirmation ? 'NEED_CONFIRMATION' : '');
+    return { ok: r.ok && !err && !!j.idToken, err, j };
+  }
+
+  async function onGoogleCredential(resp) {
+    setAccountMsg('Signing in…');
+    try {
+      state.sync = state.sync || {};
+      const oldUid = state.sync.uid;
+      let linkToken = null;
+      try { if (state.sync.refreshToken) linkToken = await authToken(); } catch (err) { /* no anonymous session yet */ }
+      // First try linking this phone's anonymous account, so its id (and online corporation) is kept.
+      let res = linkToken ? await idpSignIn(resp.credential, linkToken) : { ok: false, err: 'NO_LINK' };
+      let switched = false;
+      if (!res.ok) {
+        // The Google account already exists (e.g. used on another phone): sign in to it instead.
+        // Remove this phone's online corporation first, since the new account couldn't update it.
+        if (joined() && linkToken && oldUid) { try { await api('DELETE', corpPath()); } catch (err) { /* ignore */ } }
+        res = await idpSignIn(resp.credential, null);
+        switched = true;
+      }
+      if (!res.ok) throw new Error(res.err || 'sign-in');
+      const j = res.j;
+      idToken = j.idToken; idTokenExp = Date.now() + Number(j.expiresIn || 3600) * 1000;
+      Object.assign(state.sync, { uid: j.localId, refreshToken: j.refreshToken, provider: 'google', name: j.displayName || j.fullName || '', email: j.email || '' });
+      if (!state.ceo && state.sync.name) state.ceo = state.sync.name;
+      save(); renderBound(); renderStatus();
+      lastPushed = '';
+      await afterGoogleSignIn(switched && j.localId !== oldUid);
+    } catch (err) {
+      setAccountMsg('Google sign-in didn’t finish (' + (err.message || 'error') + '). You can keep using the app without it.');
+    }
+    renderAccount();
+  }
+
+  // After signing in: restore an existing cloud backup if this phone is empty (or the player agrees), else upload.
+  async function afterGoogleSignIn(otherAccount) {
+    let cloud = null;
+    try { cloud = await fetchBackup(); } catch (err) { /* no backup or offline */ }
+    const localEmpty = !state.games.length && !Object.keys(state.unlocked).length && !state.corp;
+    if (cloud && (localEmpty || confirm('Your Google account has a cloud backup of “' + (cloud.state.corp || 'a campaign') + '” from ' +
+        new Date(cloud.updatedAt).toLocaleString() + '. Replace this phone’s campaign with it?\n\n(Cancel keeps this phone’s campaign and backs it up instead.)'))) {
+      restoreBackup(cloud.state);
+      setAccountMsg('Restored your campaign from your cloud backup.');
+    } else {
+      await backupNow();
+      setAccountMsg(otherAccount ? 'Signed in. This phone’s campaign is now backed up to your Google account.' : 'Signed in. Your campaign is backed up to your Google account.');
+    }
+    syncNow(true);
+  }
+
+  const backupPath = () => 'users/' + encodeURIComponent(state.sync.uid) + '/backup/main';
+  function backupState() {
+    const copy = JSON.parse(JSON.stringify(state));
+    delete copy.sync;                    // sign-in tokens stay on the device
+    return copy;
+  }
+  async function backupNow() {
+    if (!signedIn()) return;
+    await authToken();
+    const at = new Date().toISOString();
+    await api('PATCH', backupPath(), { fields: {
+      data: { stringValue: JSON.stringify(backupState()) },
+      updatedAt: { timestampValue: at },
+      app: { stringValue: APP_VERSION },
+    } });
+    state.sync.lastBackup = at; state.sync.backupError = '';
+    store(STORE_KEY, state);
+  }
+  async function fetchBackup() {
+    await authToken();
+    try {
+      const d = await api('GET', backupPath());
+      return { state: JSON.parse(d.fields.data.stringValue), updatedAt: d.fields.updatedAt.timestampValue };
+    } catch (err) { if (err.status === 404) return null; throw err; }
+  }
+  function restoreBackup(saved) {
+    const sync = state.sync;
+    replaceState(Object.assign(saved, { sync }));
+    state.sync.lastBackup = new Date().toISOString();
+    save();
+  }
+  function scheduleBackup() {
+    if (!signedIn()) return;
+    clearTimeout(backupTimer);
+    backupTimer = setTimeout(() => {
+      backupNow().then(renderAccount).catch(() => { state.sync.backupError = 'Backup will retry when you’re online.'; renderAccount(); });
+    }, 8000);
+  }
+
+  function setAccountMsg(t) { const el = $('#account-msg'); if (el) el.textContent = t; }
+  function renderAccount() {
+    const box = $('#account-box');
+    if (!googleReady()) { box.hidden = true; return; }
+    box.hidden = false;
+    if (!signedIn()) {
+      box.innerHTML = `<p class="hint small">Optional: sign in with Google to back up your campaign to your Google account, move to a new phone without a backup file, and keep your online corporation yours on any device.</p>
+        <div id="gsi-btn" class="gsi-btn"></div><p class="status" id="account-msg"></p>`;
+      loadGsi().then(() => {
+        google.accounts.id.initialize({ client_id: SYNC_CONFIG.googleClientId, callback: onGoogleCredential, ux_mode: 'popup', auto_select: false });
+        google.accounts.id.renderButton($('#gsi-btn'), { theme: 'filled_black', size: 'large', shape: 'pill', text: 'signin_with', width: 280 });
+      }).catch(() => setAccountMsg('Google sign-in couldn’t load (offline?). Everything else still works.'));
+      return;
+    }
+    const s = state.sync;
+    box.innerHTML = `<div class="online-on">
+        <div><span class="dot"></span>Signed in as <b>${esc(s.name || s.email || 'Google user')}</b>
+          <small>${esc(s.email || '')}${s.email ? ' · ' : ''}${s.backupError ? esc(s.backupError) : 'Cloud backup ' + ago(s.lastBackup)}</small></div>
+        <div class="online-btns">
+          <button type="button" class="btn sm" id="btn-backup-now">Back up now</button>
+          <button type="button" class="btn sm" id="btn-backup-restore">Restore</button>
+          <button type="button" class="btn sm danger" id="btn-signout">Sign out</button>
+        </div></div><p class="status" id="account-msg"></p>`;
+  }
+  $('#account-box').addEventListener('click', async (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    if (t.id === 'btn-backup-now') {
+      setAccountMsg('Backing up…');
+      try { await backupNow(); renderAccount(); setAccountMsg('Backed up.'); } catch (err) { setAccountMsg(syncError(err)); }
+    } else if (t.id === 'btn-backup-restore') {
+      try {
+        const cloud = await fetchBackup();
+        if (!cloud) { setAccountMsg('No cloud backup yet.'); return; }
+        if (!confirm('Replace this phone’s campaign with your cloud backup from ' + new Date(cloud.updatedAt).toLocaleString() + '?')) return;
+        restoreBackup(cloud.state); renderAccount(); setAccountMsg('Restored.');
+      } catch (err) { setAccountMsg(syncError(err)); }
+    } else if (t.id === 'btn-signout') {
+      if (!confirm('Sign out of Google on this phone? Your campaign stays here, but cloud backup stops' +
+        (joined() ? ', and this phone can’t update your online corporation until you sign in again.' : '.'))) return;
+      try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch (err) { /* ignore */ }
+      Object.assign(state.sync, { provider: '', uid: '', refreshToken: '', name: '', email: '' });
+      idToken = null;
+      save(); renderAccount();
+    }
+  });
+
   // ---------- boot ----------
   $('#b-dmg-rules').textContent = DAMAGE_RULES;
   function renderAll() { renderBound(); renderUnlocks(); renderGames(); renderShips(); renderBattle(); renderStatus(); }
   renderAll();
   renderOnline();
+  renderAccount();
   syncNow(true);
   showTab($('[data-view="' + prefs.tab + '"]') ? prefs.tab : 'overview');
 
