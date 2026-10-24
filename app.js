@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.25.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.26.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -1894,6 +1894,14 @@
 
   // After signing in: restore an existing cloud backup if this phone is empty (or the player agrees), else upload.
   async function afterGoogleSignIn(otherAccount) {
+    let link = null;
+    try { link = await readLink(); } catch (err) { /* offline */ }
+    if (link && link.teamCode) {            // another device already set this account up: join it
+      await ensurePairing();
+      try { await backupNow(); } catch (err) { /* later */ }
+      syncNow(true);
+      return;
+    }
     let cloud = null;
     try { cloud = await fetchBackup(); } catch (err) { /* no backup or offline */ }
     const localEmpty = !state.games.length && !Object.keys(state.unlocked).length && !state.corp;
@@ -1905,8 +1913,66 @@
       await backupNow();
       setAccountMsg(otherAccount ? 'Signed in. This phone’s campaign is now backed up to your Google account.' : 'Signed in. Your campaign is backed up to your Google account.');
     }
+    await ensurePairing();
     syncNow(true);
   }
+
+  // ---------- automatic device pairing through Google sign-in ----------
+  // A signed-in account records its corporation's share code (users/{uid}/backup/link). Other devices
+  // signed in with the same Google account look it up and join that shared corporation automatically.
+  const linkPath = () => 'users/' + encodeURIComponent(state.sync.uid) + '/backup/link';
+  async function readLink() {
+    try {
+      const d = await api('GET', linkPath());
+      return JSON.parse(d.fields.data.stringValue);
+    } catch (err) { if (err.status === 404) return null; throw err; }
+  }
+  async function writeLink(code) {
+    if (!signedIn() || !code) return;
+    await api('PATCH', linkPath(), { fields: {
+      data: { stringValue: JSON.stringify({ teamCode: code, corp: state.corp || '' }) },
+      updatedAt: { timestampValue: new Date().toISOString() },
+    } });
+  }
+  let pairing = false;
+  async function ensurePairing() {
+    if (!signedIn() || pairing) return;
+    pairing = true;
+    try {
+      await authToken();
+      const link = await readLink();
+      if (link && link.teamCode) {
+        if (inTeam() && state.team.code === link.teamCode) return;
+        const empty = !state.games.length && !Object.keys(state.unlocked).length && !state.corp;
+        if (!empty) {
+          if (prefs.pairDeclined === link.teamCode) return;
+          if (!confirm('Your Google account’s corporation “' + (link.corp || 'from another device') + '” is set up on another device. Use it on this device too, kept in sync automatically?\n\n' +
+              'This replaces this device’s “' + (state.corp || 'unnamed corporation') + '”. Export a backup first if you want to keep it. (Cancel keeps this device separate.)')) {
+            prefs.pairDeclined = link.teamCode; savePrefs();
+            return;
+          }
+        }
+        try {
+          await joinTeam(link.teamCode);
+          setAccountMsg('This device now shares your corporation with your other signed-in devices.');
+        } catch (err) {
+          if (err.message !== 'no-team') throw err;
+          // The linked shared corporation no longer exists: link this device's corporation instead.
+          if (!inTeam()) await createTeam();
+          await writeLink(state.team.code);
+        }
+      } else {
+        if (!inTeam()) await createTeam();
+        await writeLink(state.team.code);
+      }
+    } catch (err) {
+      /* offline or not ready: try again next time the app opens */
+    } finally {
+      pairing = false;
+      renderAccount(); renderTeam();
+    }
+  }
+
 
   const backupPath = () => 'users/' + encodeURIComponent(state.sync.uid) + '/backup/main';
   function backupState() {
@@ -1953,7 +2019,7 @@
     if (!googleReady()) { box.hidden = true; return; }
     box.hidden = false;
     if (!signedIn()) {
-      box.innerHTML = `<p class="hint small">Optional: sign in with Google to back up your campaign to your Google account, move to a new phone without a backup file, and keep your online corporation yours on any device.</p>
+      box.innerHTML = `<p class="hint small">Optional: sign in with Google on each of your devices (phone, iPad…) and they share your corporation automatically. It’s also backed up to your Google account.</p>
         <div id="gsi-btn" class="gsi-btn"></div><p class="status" id="account-msg"></p>`;
       loadGsi().then(() => {
         google.accounts.id.initialize({ client_id: SYNC_CONFIG.googleClientId, callback: onGoogleCredential, ux_mode: 'popup', auto_select: false });
@@ -1964,7 +2030,8 @@
     const s = state.sync;
     box.innerHTML = `<div class="online-on">
         <div><span class="dot"></span>Signed in as <b>${esc(s.name || s.email || 'Google user')}</b>
-          <small>${esc(s.email || '')}${s.email ? ' · ' : ''}${s.backupError ? esc(s.backupError) : 'Cloud backup ' + ago(s.lastBackup)}</small></div>
+          <small>${esc(s.email || '')}${s.email ? ' · ' : ''}${s.backupError ? esc(s.backupError) : 'Cloud backup ' + ago(s.lastBackup)}</small>
+          <small>Other devices signed in with this account share this corporation automatically.</small></div>
         <div class="online-btns">
           <button type="button" class="btn sm" id="btn-backup-now">Back up now</button>
           <button type="button" class="btn sm" id="btn-backup-restore">Restore</button>
@@ -1985,12 +2052,17 @@
         restoreBackup(cloud.state); renderAccount(); setAccountMsg('Restored.');
       } catch (err) { setAccountMsg(syncError(err)); }
     } else if (t.id === 'btn-signout') {
-      if (!confirm('Sign out of Google on this phone? Your campaign stays here, but cloud backup stops' +
-        (joined() ? ', and this phone can’t update your online corporation until you sign in again.' : '.'))) return;
+      if (!confirm('Sign out of Google on this device? It stops syncing with your other devices and cloud backup stops. ' +
+        'This device keeps its own separate copy of the campaign' + (joined() ? ' and leaves the online campaign (your corporation stays in it from your other devices).' : '.'))) return;
       try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch (err) { /* ignore */ }
-      Object.assign(state.sync, { provider: '', uid: '', refreshToken: '', name: '', email: '' });
-      idToken = null;
-      save(); renderAccount();
+      if (inTeam()) { state.team = null; state.corpId = newId(); }
+      if (joined()) {
+        Object.keys(state.rivals || {}).forEach((id) => { if (state.rivals[id].online) delete state.rivals[id]; });
+        state.sync.code = '';
+      }
+      Object.assign(state.sync, { provider: '', uid: '', refreshToken: '', name: '', email: '', error: '' });
+      idToken = null; lastPushed = '';
+      save(); renderAll(); renderAccount(); renderTeam(); renderOnline();
     }
   });
 
@@ -2176,7 +2248,8 @@
         currentDocument: { exists: true },
       }] }),
     });
-    if (!r.ok) throw Object.assign(new Error(r.status === 404 ? 'no-team' : 'join'), { status: r.status });
+    // Firestore refuses a join to a missing team with 403 (rules) or 404; a real team only refuses when full.
+    if (!r.ok) throw Object.assign(new Error([403, 404].includes(r.status) ? 'no-team' : 'join'), { status: r.status });
     const d = await api('GET', teamPath(code));
     const team = readTeamDoc(d);
     const corpId = d.fields.corpId.stringValue;
@@ -2246,6 +2319,7 @@
         if (askName() === null) return;
         setTeamMsg('Setting up…');
         await createTeam();
+        writeLink(state.team.code).catch(() => {});
         setTeamMsg('Done. Enter the code on the other device (Overview → Team & devices → Join).');
       } else if (b.id === 'btn-team-name') {
         await changeMyName();
@@ -2271,8 +2345,8 @@
     if (hasOwn && !confirm('Joining replaces this device’s corporation (' + (state.corp || 'unnamed') + ') with the shared one. Export a backup first if you want to keep it. Join?')) return;
     if (askName() === null) return;
     setTeamMsg('Joining…');
-    try { await joinTeam(code); setTeamMsg('Joined. This device now shares “' + (state.corp || 'the corporation') + '”.'); }
-    catch (err) { setTeamMsg(err.message === 'no-team' ? 'Nothing found with that code.' : syncError(err)); }
+    try { await joinTeam(code); writeLink(code).catch(() => {}); setTeamMsg('Joined. This device now shares “' + (state.corp || 'the corporation') + '”.'); }
+    catch (err) { setTeamMsg(err.message === 'no-team' ? 'Nothing found with that code (or it already has 8 devices).' : syncError(err)); }
   });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') teamSync(); });
   setInterval(() => { if (document.visibilityState === 'visible') teamSync(); }, 45000);
@@ -2298,6 +2372,7 @@
   renderTeam();
   syncNow(true);
   teamSync();
+  ensurePairing();
   showTab($('[data-view="' + prefs.tab + '"]') ? prefs.tab : 'overview');
 
   // ---------- updates ----------
