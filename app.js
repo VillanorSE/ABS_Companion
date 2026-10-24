@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.20.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.21.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -1409,8 +1409,9 @@
     // ship classes bought and lost (from saved game summaries)
     const byClass = {};
     games.forEach((g) => (g.summary ? g.summary.fleet : []).forEach((f) => {
-      const k = byClass[f.ship] = byClass[f.ship] || { bought: 0, lost: 0, spent: 0 };
-      k.bought += f.count; k.lost += f.lost; k.spent += f.cost;
+      const k = byClass[f.ship] = byClass[f.ship] || { bought: 0, spent: 0, lostCost: 0 };
+      k.bought += f.count; k.spent += f.cost;
+      k.lostCost += f.count ? f.lost * (f.cost / f.count) : 0;   // credits' worth of ships lost
     }));
     const classes = Object.entries(byClass).sort((a, b) => b[1].bought - a[1].bought);
     const summarized = games.filter((g) => g.summary).length;
@@ -1435,8 +1436,8 @@
       <h4>Reputation over the campaign</h4>
       <div class="repline">${per.map((p) => `<span><b>${p.rep}</b><small>G${p.n}</small></span>`).join('<i>›</i>')}</div>
       ${classes.length ? `<h4>Ships requisitioned (${summarized} game${summarized === 1 ? '' : 's'} with summaries)</h4>
-        <table class="ctab"><thead><tr><th>Class</th><th>Bought</th><th>Lost</th><th>Credits</th></tr></thead><tbody>
-        ${classes.map(([n, k]) => `<tr><td>${esc(n)}</td><td>${k.bought}</td><td class="${k.lost ? 'neg' : ''}">${k.lost}</td><td>${k.spent}</td></tr>`).join('')}</tbody></table>`
+        <table class="ctab"><thead><tr><th>Class</th><th>Ships bought</th><th>Cost</th><th>Lost (credits)</th></tr></thead><tbody>
+        ${classes.map(([n, k]) => `<tr><td>${esc(n)}</td><td>${k.bought}</td><td>${k.spent}</td><td class="${k.lostCost ? 'neg' : ''}">${Math.round(k.lostCost)}</td></tr>`).join('')}</tbody></table>`
         : '<p class="hint small">Finish games from the Battle tab to see which ships you requisition and lose.</p>'}`;
   }
 
