@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.23.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.24.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -1269,7 +1269,7 @@
       capital: { total: c.total, avail: c.avail }, unlocked: Object.keys(state.unlocked),
       games: state.games.map((g) => ({ id: g.id, scale: g.scale, opp: g.opp, win: g.win, credits: g.credits, rep: g.rep, boughtRep: !!g.boughtRep, date: g.date, summary: g.summary || null })),
       purchases: state.purchases || [],
-      teamNames: state.team && state.team.code ? Object.values(state.team.names || {}) : undefined,
+      teamNames: state.team && state.team.code ? uniqueNames(state.team.names) : undefined,
     };
   }
   function rivalStatus(msg, err) { const el = $('#rival-status'); el.textContent = msg; el.classList.toggle('err', !!err); }
@@ -2060,7 +2060,31 @@
   }
 
   const teamPath = (code) => 'teams/' + encodeURIComponent(code || state.team.code);
-  const myTeamName = () => (state.sync && state.sync.name) || state.ceo || 'Teammate';
+  const myTeamName = () => state.myName || (state.sync && state.sync.name) || state.ceo || 'Player';
+  // Ask for this person's name (shown to teammates); remembered on this device.
+  function askName() {
+    const n = prompt('Your name (shown to the others sharing this corporation):', myTeamName());
+    if (n === null) return null;
+    state.myName = n.trim() || myTeamName();
+    store(STORE_KEY, state);
+    return state.myName;
+  }
+  // People sharing the corporation, with one person's several devices counted once.
+  function peopleList(names) {
+    const counts = {};
+    Object.values(names || {}).forEach((n) => { counts[n] = (counts[n] || 0) + 1; });
+    return Object.entries(counts).map(([n, c]) => (c > 1 ? n + ' (' + c + ' devices)' : n));
+  }
+  const uniqueNames = (names) => [...new Set(Object.values(names || {}))];
+  async function changeMyName() {
+    if (askName() === null) return;
+    await authToken();
+    const uid = state.sync.uid;
+    await api('PATCH', teamPath() + '?updateMask.fieldPaths=' + encodeURIComponent('names.`' + uid + '`'),
+      { fields: { names: { mapValue: { fields: { [uid]: { stringValue: state.myName } } } } } });
+    state.team.names = Object.assign({}, state.team.names, { [uid]: state.myName });
+    save(); renderTeam(); schedulePush();
+  }
   function readTeamDoc(d) {
     const f = d.fields || {};
     const names = {};
@@ -2191,22 +2215,23 @@
     if (!syncReady()) { box.hidden = true; return; }
     box.hidden = false;
     if (!inTeam()) {
-      box.innerHTML = `<p class="hint small">Playing as a team? Teammates share one corporation, and either phone can log games and buy unlocks.</p>
+      box.innerHTML = `<p class="hint small">Share this corporation with a teammate, or use it on another of your own devices (like an iPad). Every device that joins sees the same corporation, any of them can log games and buy unlocks, and changes sync automatically.</p>
         <div class="online-join">
-          <button type="button" class="btn" id="btn-team-create">Make this a team corporation</button>
-          <form id="team-join-form" class="online-join-form"><input type="text" name="code" placeholder="TEAM-XXXX-XXXX" autocapitalize="characters" autocomplete="off" aria-label="Team code" required><button type="submit" class="btn">Join team</button></form>
+          <button type="button" class="btn" id="btn-team-create">Share this corporation</button>
+          <form id="team-join-form" class="online-join-form"><input type="text" name="code" placeholder="TEAM-XXXX-XXXX" autocapitalize="characters" autocomplete="off" aria-label="Share code" required><button type="submit" class="btn">Join</button></form>
         </div><p class="status" id="team-msg"></p>`;
       return;
     }
     const t = state.team;
-    const names = Object.values(t.names || {});
+    const people = peopleList(t.names);
     box.innerHTML = `<div class="online-on">
-        <div><span class="dot ${t.error ? 'bad' : ''}"></span>Team corporation <b>${esc(t.code)}</b>
-          <small>CEOs: ${names.length ? names.map(esc).join(' & ') : '—'} · ${t.error ? esc(t.error) : 'synced ' + ago(t.lastSync)}</small></div>
+        <div><span class="dot ${t.error ? 'bad' : ''}"></span>Shared corporation <b>${esc(t.code)}</b>
+          <small>${people.length ? people.map(esc).join(' & ') : '—'} · you’re <b>${esc(myTeamName())}</b> · ${t.error ? esc(t.error) : 'synced ' + ago(t.lastSync)}</small></div>
         <div class="online-btns">
           <button type="button" class="btn sm" id="btn-team-share">Share code</button>
           <button type="button" class="btn sm" id="btn-team-sync">Sync now</button>
-          <button type="button" class="btn sm danger" id="btn-team-leave">Leave team</button>
+          <button type="button" class="btn sm" id="btn-team-name">Change my name</button>
+          <button type="button" class="btn sm danger" id="btn-team-leave">Stop sharing here</button>
         </div></div><p class="status" id="team-msg"></p>`;
   }
   $('#team-box').addEventListener('click', async (e) => {
@@ -2214,17 +2239,20 @@
     if (!b) return;
     try {
       if (b.id === 'btn-team-create') {
-        if (!confirm('Make “' + (state.corp || 'this corporation') + '” a team corporation? You’ll get a code for your teammate to join with.')) return;
-        setTeamMsg('Creating team…');
+        if (!confirm('Share “' + (state.corp || 'this corporation') + '”? You’ll get a code to join from a teammate’s phone or another of your own devices.')) return;
+        if (askName() === null) return;
+        setTeamMsg('Setting up…');
         await createTeam();
-        setTeamMsg('Team created. Share the code with your teammate.');
+        setTeamMsg('Done. Enter the code on the other device (Overview → Team & devices → Join).');
+      } else if (b.id === 'btn-team-name') {
+        await changeMyName();
       } else if (b.id === 'btn-team-sync') {
         setTeamMsg('Syncing…'); await teamSync(); setTeamMsg('');
       } else if (b.id === 'btn-team-share') {
-        const text = 'Join our team corporation in ABS Companion: Overview > Team > Join team, code ' + state.team.code + '\n' + location.origin + location.pathname;
+        const text = 'Join “' + (state.corp || 'our corporation') + '” in ABS Companion: Overview > Team & devices > Join, code ' + state.team.code + '\n' + location.origin + location.pathname;
         if (navigator.share) { await navigator.share({ text }); } else { await navigator.clipboard.writeText(state.team.code); setTeamMsg('Code copied: ' + state.team.code); }
       } else if (b.id === 'btn-team-leave') {
-        if (!confirm('Leave team ' + state.team.code + '? Your teammates keep the team corporation; this phone keeps a copy as its own separate corporation.')) return;
+        if (!confirm('Stop sharing on this device? The other devices keep the shared corporation; this device keeps a copy as its own separate corporation.')) return;
         await leaveTeam();
       }
     } catch (err) {
@@ -2235,15 +2263,28 @@
   $('#team-box').addEventListener('submit', async (e) => {
     e.preventDefault();
     const code = e.target.code.value.trim().toUpperCase().replace(/\s+/g, '');
-    if (!/^TEAM-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) { setTeamMsg('That doesn’t look like a team code (TEAM-XXXX-XXXX).'); return; }
+    if (!/^TEAM-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) { setTeamMsg('That doesn’t look like a share code (TEAM-XXXX-XXXX).'); return; }
     const hasOwn = state.games.length || Object.keys(state.unlocked).length;
-    if (hasOwn && !confirm('Joining replaces this phone’s corporation (' + (state.corp || 'unnamed') + ') with the team’s. Export a backup first if you want to keep it. Join?')) return;
+    if (hasOwn && !confirm('Joining replaces this device’s corporation (' + (state.corp || 'unnamed') + ') with the shared one. Export a backup first if you want to keep it. Join?')) return;
+    if (askName() === null) return;
     setTeamMsg('Joining…');
-    try { await joinTeam(code); setTeamMsg('Joined the team.'); }
-    catch (err) { setTeamMsg(err.message === 'no-team' ? 'No team found with that code.' : syncError(err)); }
+    try { await joinTeam(code); setTeamMsg('Joined. This device now shares “' + (state.corp || 'the corporation') + '”.'); }
+    catch (err) { setTeamMsg(err.message === 'no-team' ? 'Nothing found with that code.' : syncError(err)); }
   });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') teamSync(); });
   setInterval(() => { if (document.visibilityState === 'visible') teamSync(); }, 45000);
+
+  // ---------- iPhone/iPad: Safari and the Home Screen app keep separate data ----------
+  (function installNote() {
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const standalone = navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+    const el = $('#install-note');
+    if (!ios || standalone || prefs.installNoteDismissed) return;
+    el.hidden = false;
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('button')) { prefs.installNoteDismissed = true; savePrefs(); el.hidden = true; }
+    });
+  })();
 
   // ---------- boot ----------
   $('#b-dmg-rules').textContent = DAMAGE_RULES;

@@ -597,3 +597,8 @@ dialog.tall:not([open]){display:none;}
 .share-files{margin-top:8px;}
 #online-actions .online-join-form{grid-template-columns:1fr auto;}
 #online-msg:empty,#rival-status:empty{display:none;}
+
+/* 0.24: devices */
+.install-note{background:rgba(244,182,63,.1);border:1px solid var(--accent);border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;font-size:14px;}
+.install-note p{margin:6px 0;color:#c9d2e6;}
+.online-on small b{color:var(--text);}
