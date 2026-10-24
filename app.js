@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.24.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.25.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -1765,7 +1765,8 @@
   }
   // Online status sits with the standings (Rivals); the actions live under "Campaign sharing".
   function renderOnline() {
-    const status = $('#online-box'), actions = $('#online-actions');
+    const status = $('#online-box'), actions = $('#online-actions'), leave = $('#online-leave');
+    leave.innerHTML = '';
     if (!syncReady()) {
       status.innerHTML = '';
       actions.innerHTML = '<p class="hint small">Online campaigns aren’t switched on for this app yet (a one-time Firebase setup; see the README).</p>';
@@ -1780,8 +1781,8 @@
     const s = state.sync;
     status.innerHTML = `<p class="online-line"><span class="dot ${s.error ? 'bad' : ''}"></span>Online campaign <b>${esc(s.code)}</b> · ${s.error ? esc(s.error) : 'synced ' + ago(s.lastSync)}</p>`;
     actions.innerHTML = `<button type="button" class="btn" id="btn-online-share">Share campaign code</button>
-      <button type="button" class="btn" id="btn-online-sync">Sync now</button>
-      <button type="button" class="btn danger" id="btn-online-leave">Leave online campaign</button>`;
+      <button type="button" class="btn" id="btn-online-sync">Sync now</button>`;
+    leave.innerHTML = '<button type="button" class="btn danger" id="btn-online-leave">Leave online campaign</button>';
   }
   async function joinCampaign(code) {
     state.sync = Object.assign(state.sync || {}, { code, error: '', lastSync: '' });
@@ -1789,7 +1790,9 @@
     renderOnline();
     await syncNow();
   }
-  $('#online-actions').addEventListener('click', async (e) => {
+  $('#online-leave').addEventListener('click', (e) => { if (e.target.closest('button')) onlineAction(e); });
+  $('#online-actions').addEventListener('click', onlineAction);
+  async function onlineAction(e) {
     const t = e.target.closest('button');
     if (!t) return;
     if (t.id === 'btn-online-start') {
@@ -1812,7 +1815,7 @@
       state.sync.code = ''; state.sync.error = '';
       save(); renderOnline(); renderStandings(); renderShips(); renderGames();
     }
-  });
+  }
   $('#online-actions').addEventListener('submit', async (e) => {
     e.preventDefault();
     const code = e.target.code.value.trim().toUpperCase().replace(/\s+/g, '');

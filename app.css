@@ -602,3 +602,5 @@ dialog.tall:not([open]){display:none;}
 .install-note{background:rgba(244,182,63,.1);border:1px solid var(--accent);border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;font-size:14px;}
 .install-note p{margin:6px 0;color:#c9d2e6;}
 .online-on small b{color:var(--text);}
+.leave-online{margin-top:8px;}
+.leave-online:empty{display:none;}
