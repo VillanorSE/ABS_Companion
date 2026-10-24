@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.22.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.23.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -284,7 +284,7 @@
   // ---------- games ----------
   // Whose games the Log shows: 'mine' or a rival's corpId (read-only).
   function renderLogPicker() {
-    const rivals = Object.values(state.rivals || {}).filter((r) => (r.games || []).length);
+    const rivals = Object.values(state.rivals || {});
     const sel = $('#log-view');
     $('#log-view-wrap').hidden = !rivals.length;
     if (prefs.logView !== 'mine' && !rivals.some((r) => r.corpId === prefs.logView)) prefs.logView = 'mine';
@@ -294,7 +294,9 @@
   }
   function renderRivalGames(r) {
     const games = r.games || [];
-    $('#game-list').innerHTML = `<p class="hint small">${esc(r.corp || 'This corporation')}’s games, ${r.online ? 'from the online campaign' : 'from their shared file'} (updated ${esc((r.sharedAt || '').slice(0, 10))}). Read-only.</p>` +
+    const when = r.sharedAt ? new Date(r.sharedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown';
+    $('#game-list').innerHTML = `<p class="hint small">${esc(r.corp || 'This corporation')}’s games, ${r.online ? 'from the online campaign' : 'from their shared file'}. Their data was last updated ${esc(when)}. Read-only.</p>` +
+      (games.length ? '' : `<p class="empty">No games shared yet. Their app sends updates when they open it; ${r.online ? 'ask them to open the app (and check it shows Version ' + APP_VERSION + ' or later under Overview → About)' : 'ask them to share their corporation file again'}.</p>`) +
       games.map((g, i) => {
         const bits = [];
         if (g.scale !== '' && g.scale != null) bits.push('Scale ' + esc(g.scale));
@@ -1739,6 +1741,7 @@
       state.sync.error = syncError(err);
     }
     syncing = false;
+    if (!quiet) setOnlineMsg('');
     save(); renderStandings(); renderShips(); renderOnline(); renderGames();
   }
   // Push changes a few seconds after they happen (games logged, unlocks bought, etc.).
@@ -1760,31 +1763,25 @@
     const m = Math.round((Date.now() - new Date(iso)) / 60000);
     return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : new Date(iso).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
   }
+  // Online status sits with the standings (Rivals); the actions live under "Campaign sharing".
   function renderOnline() {
-    const box = $('#online-box');
+    const status = $('#online-box'), actions = $('#online-actions');
     if (!syncReady()) {
-      box.innerHTML = '<p class="hint small">Online campaigns aren’t switched on for this app yet (a one-time Firebase setup; see the README).</p>';
+      status.innerHTML = '';
+      actions.innerHTML = '<p class="hint small">Online campaigns aren’t switched on for this app yet (a one-time Firebase setup; see the README).</p>';
       return;
     }
     if (!joined()) {
-      box.innerHTML = `<p class="hint small">Online: everyone joins the same campaign code and standings update automatically.</p>
-        <div class="online-join">
-          <button type="button" class="btn primary" id="btn-online-start">Start online campaign</button>
-          <form id="online-join-form" class="online-join-form"><input type="text" name="code" placeholder="ABS-XXXX-XXXX" autocapitalize="characters" autocomplete="off" aria-label="Campaign code" required><button type="submit" class="btn">Join</button></form>
-        </div>
-        <p class="status" id="online-msg"></p>`;
+      status.innerHTML = '<p class="hint small">Not in an online campaign. Start or join one under Campaign sharing below.</p>';
+      actions.innerHTML = `<button type="button" class="btn" id="btn-online-start">Start online campaign</button>
+        <form id="online-join-form" class="online-join-form"><input type="text" name="code" placeholder="ABS-XXXX-XXXX" autocapitalize="characters" autocomplete="off" aria-label="Campaign code" required><button type="submit" class="btn">Join campaign</button></form>`;
       return;
     }
     const s = state.sync;
-    box.innerHTML = `<div class="online-on">
-        <div><span class="dot ${s.error ? 'bad' : ''}"></span>Online campaign <b>${esc(s.code)}</b>
-          <small>${s.error ? esc(s.error) : 'Synced ' + ago(s.lastSync)}</small></div>
-        <div class="online-btns">
-          <button type="button" class="btn sm" id="btn-online-share">Share code</button>
-          <button type="button" class="btn sm" id="btn-online-sync">Sync now</button>
-          <button type="button" class="btn sm danger" id="btn-online-leave">Leave</button>
-        </div></div>
-      <p class="status" id="online-msg"></p>`;
+    status.innerHTML = `<p class="online-line"><span class="dot ${s.error ? 'bad' : ''}"></span>Online campaign <b>${esc(s.code)}</b> · ${s.error ? esc(s.error) : 'synced ' + ago(s.lastSync)}</p>`;
+    actions.innerHTML = `<button type="button" class="btn" id="btn-online-share">Share campaign code</button>
+      <button type="button" class="btn" id="btn-online-sync">Sync now</button>
+      <button type="button" class="btn danger" id="btn-online-leave">Leave online campaign</button>`;
   }
   async function joinCampaign(code) {
     state.sync = Object.assign(state.sync || {}, { code, error: '', lastSync: '' });
@@ -1792,7 +1789,7 @@
     renderOnline();
     await syncNow();
   }
-  $('#online-box').addEventListener('click', async (e) => {
+  $('#online-actions').addEventListener('click', async (e) => {
     const t = e.target.closest('button');
     if (!t) return;
     if (t.id === 'btn-online-start') {
@@ -1816,7 +1813,7 @@
       save(); renderOnline(); renderStandings(); renderShips(); renderGames();
     }
   });
-  $('#online-box').addEventListener('submit', async (e) => {
+  $('#online-actions').addEventListener('submit', async (e) => {
     e.preventDefault();
     const code = e.target.code.value.trim().toUpperCase().replace(/\s+/g, '');
     if (!/^ABS-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) { setOnlineMsg('That doesn’t look like a campaign code (ABS-XXXX-XXXX).'); return; }

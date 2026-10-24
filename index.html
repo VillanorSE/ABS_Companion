@@ -69,14 +69,7 @@
     <div id="team-box" class="online-box" hidden></div>
 
     <h2 class="sect">Rivals</h2>
-    <div id="online-box" class="online-box"></div>
-    <p class="hint small">Or share by file (Messages, Discord, email…) and add the files rivals send you.</p>
-    <div class="btns two rival-btns">
-      <button class="btn primary" type="button" id="btn-share-corp">Share my corporation</button>
-      <button class="btn" type="button" id="btn-add-rival">Add rival from file</button>
-    </div>
-    <input type="file" id="file-rival" accept=".json,application/json" multiple hidden>
-    <p class="status" id="rival-status" role="status"></p>
+    <div id="online-box" class="online-status"></div>
     <div id="standings"></div>
 
     <details class="group fold">
@@ -93,6 +86,17 @@
   
     <h2 class="sect">Notes / house rules</h2>
     <textarea class="notes" data-bind="notes" rows="10" placeholder="Notes and house rules…"></textarea>
+
+    <h2 class="sect">Campaign sharing</h2>
+    <p class="hint">Join an online campaign so everyone’s standings, fleets and games update automatically, or swap files by Messages, Discord or email.</p>
+    <div class="btns" id="online-actions"></div>
+    <div class="btns share-files">
+      <button class="btn" type="button" id="btn-share-corp">Share my corporation (file)</button>
+      <button class="btn" type="button" id="btn-add-rival">Add rival from file</button>
+    </div>
+    <input type="file" id="file-rival" accept=".json,application/json" multiple hidden>
+    <p class="status" id="online-msg" role="status"></p>
+    <p class="status" id="rival-status" role="status"></p>
 
     <h2 class="sect">Backup &amp; transfer</h2>
     <p class="hint">Your campaign is saved on this device automatically. Export a backup file to move it to another phone or keep it safe.</p>

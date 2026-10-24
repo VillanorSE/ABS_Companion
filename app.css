@@ -589,3 +589,11 @@ dialog.tall:not([open]){display:none;}
 .log-view select{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:15px;}
 .rival-game{cursor:default;}
 .nosum{grid-column:1 / 4;font-size:12px;color:var(--muted);margin-top:4px;}
+
+/* 0.23: campaign sharing section */
+.online-status .hint{margin:0 2px 8px;}
+.online-line{margin:0 2px 10px;font-size:14px;color:var(--muted);}
+.online-line b{color:var(--text);}
+.share-files{margin-top:8px;}
+#online-actions .online-join-form{grid-template-columns:1fr auto;}
+#online-msg:empty,#rival-status:empty{display:none;}
