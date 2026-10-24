@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.21.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.22.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -282,7 +282,43 @@
   });
 
   // ---------- games ----------
+  // Whose games the Log shows: 'mine' or a rival's corpId (read-only).
+  function renderLogPicker() {
+    const rivals = Object.values(state.rivals || {}).filter((r) => (r.games || []).length);
+    const sel = $('#log-view');
+    $('#log-view-wrap').hidden = !rivals.length;
+    if (prefs.logView !== 'mine' && !rivals.some((r) => r.corpId === prefs.logView)) prefs.logView = 'mine';
+    sel.innerHTML = `<option value="mine">My games${state.corp ? ' (' + esc(state.corp) + ')' : ''}</option>` +
+      rivals.map((r) => `<option value="${esc(r.corpId)}">${esc(r.corp || 'Unnamed corporation')}${r.teamNames && r.teamNames.length > 1 ? ' (' + r.teamNames.map(esc).join(' & ') + ')' : r.ceo ? ' (' + esc(r.ceo) + ')' : ''}</option>`).join('');
+    sel.value = prefs.logView || 'mine';
+  }
+  function renderRivalGames(r) {
+    const games = r.games || [];
+    $('#game-list').innerHTML = `<p class="hint small">${esc(r.corp || 'This corporation')}’s games, ${r.online ? 'from the online campaign' : 'from their shared file'} (updated ${esc((r.sharedAt || '').slice(0, 10))}). Read-only.</p>` +
+      games.map((g, i) => {
+        const bits = [];
+        if (g.scale !== '' && g.scale != null) bits.push('Scale ' + esc(g.scale));
+        if (g.credits) bits.push(esc(g.credits) + ' credits');
+        if (g.rep) bits.push('+' + esc(g.rep) + ' rep');
+        if (g.boughtRep) bits.push('bought rep (−10)');
+        if (g.date) bits.push(esc(g.date));
+        return `<div class="game rival-game">
+          <span class="num">${i + 1}</span>
+          <span class="opp">${g.opp ? 'vs ' + esc(g.opp) : 'Game ' + (i + 1)}</span>
+          ${g.win ? `<span class="res ${esc(g.win)}">${esc(g.win)}</span>` : '<span></span>'}
+          <span class="meta">${bits.join(' · ')}</span>
+          ${g.summary ? `<button type="button" class="sumbtn" data-sum="r${i}" aria-expanded="false">Game summary ${CHEVRON}</button>
+            <div class="sum-wrap" hidden>${summaryHtml(g.summary)}</div>` : '<span class="nosum">No summary shared for this game</span>'}
+        </div>`;
+      }).join('');
+  }
+
   function renderGames() {
+    renderLogPicker();
+    const rival = prefs.logView !== 'mine' && (state.rivals || {})[prefs.logView];
+    $('#btn-add-game').hidden = !!rival;
+    $$('[data-mine-only]').forEach((el) => { el.hidden = !!rival; });
+    if (rival) { $('#game-empty').hidden = true; $('#stats-wrap').hidden = true; renderRivalGames(rival); return; }
     const list = $('#game-list');
     $('#game-empty').hidden = state.games.length > 0;
     const unlockName = (id) => (SHIPS.find((x) => x.id === id) || ALL_ADVS.find((a) => a.id === id)).name;
@@ -359,6 +395,7 @@
   function closeGame() { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); }
 
   $('#btn-add-game').addEventListener('click', () => openGame(-1));
+  $('#log-view').addEventListener('change', (e) => { prefs.logView = e.target.value; savePrefs(); renderGames(); window.scrollTo(0, 0); });
   $('#game-list').addEventListener('click', (e) => {
     const bi = e.target.closest('.buy-item');
     if (bi) { openWhen(bi); return; }
@@ -1228,7 +1265,7 @@
       type: SHARE_TYPE, version: 1, sharedAt: new Date().toISOString(), app: APP_VERSION,
       corpId: state.corpId, corp: state.corp, ceo: state.ceo, rep: reputation(), campScale: state.campScale,
       capital: { total: c.total, avail: c.avail }, unlocked: Object.keys(state.unlocked),
-      games: state.games.map((g) => ({ scale: g.scale, opp: g.opp, win: g.win, credits: g.credits, rep: g.rep, boughtRep: !!g.boughtRep, date: g.date })),
+      games: state.games.map((g) => ({ id: g.id, scale: g.scale, opp: g.opp, win: g.win, credits: g.credits, rep: g.rep, boughtRep: !!g.boughtRep, date: g.date, summary: g.summary || null })),
       purchases: state.purchases || [],
       teamNames: state.team && state.team.code ? Object.values(state.team.names || {}) : undefined,
     };
@@ -1272,7 +1309,7 @@
       state.rivals[id] = Object.assign({}, d, { corpId: id, importedAt: new Date().toISOString() });
       names.push((prev ? 'Updated ' : 'Added ') + (d.corp || 'Unnamed corporation'));
     });
-    save(); renderStandings();
+    save(); renderStandings(); renderGames();
     rivalStatus(names.length ? names.join(', ') + '.' : own ? 'That’s your own corporation.' : 'Nothing new in that file.', !names.length);
   }
 
@@ -1304,6 +1341,7 @@
           <p><b>Advantages:</b> ${advs.length ? advs.map(esc).join(', ') : 'none'}</p>
           ${games.length ? `<p><b>Recent games:</b> ${games.slice(-3).reverse().map((g) => [g.opp ? 'vs ' + g.opp : '', g.win, g.credits !== '' && g.credits != null ? g.credits + ' cr' : ''].filter(Boolean).map(esc).join(' ')).join(' · ')}</p>` : ''}
           <div class="btns two"><button type="button" class="btn" data-rival-fleet="${esc(r.corpId)}">View their fleet stats</button>
+            ${(r.games || []).length ? `<button type="button" class="btn" data-rival-games="${esc(r.corpId)}">View their games</button>` : ''}
             ${r.online ? '' : `<button type="button" class="btn danger" data-rival-del="${esc(r.corpId)}">Remove</button>`}</div>
         </div>`}
       </div>`;
@@ -1316,6 +1354,9 @@
       const k = t.dataset.rival;
       if (rivalOpen.has(k)) rivalOpen.delete(k); else rivalOpen.add(k);
       renderStandings();
+    } else if (t.dataset.rivalGames) {
+      prefs.logView = t.dataset.rivalGames; savePrefs();
+      renderGames(); showTab('log');
     } else if (t.dataset.rivalFleet) {
       prefs.shipFilter = 'rival:' + t.dataset.rivalFleet; savePrefs();
       renderShips(); showTab('stats');
@@ -1323,7 +1364,7 @@
       const r = state.rivals[t.dataset.rivalDel];
       if (!confirm('Remove ' + (r.corp || 'this rival') + ' from your rivals?')) return;
       delete state.rivals[t.dataset.rivalDel];
-      save(); renderStandings(); renderShips();
+      save(); renderStandings(); renderShips(); renderGames();
     }
   });
 
@@ -1698,7 +1739,7 @@
       state.sync.error = syncError(err);
     }
     syncing = false;
-    save(); renderStandings(); renderShips(); renderOnline();
+    save(); renderStandings(); renderShips(); renderOnline(); renderGames();
   }
   // Push changes a few seconds after they happen (games logged, unlocks bought, etc.).
   function schedulePush() {
@@ -1772,7 +1813,7 @@
       if (remove) { try { await api('DELETE', corpPath()); } catch (err) { /* already gone or offline */ } }
       Object.keys(state.rivals || {}).forEach((id) => { if (state.rivals[id].online) delete state.rivals[id]; });
       state.sync.code = ''; state.sync.error = '';
-      save(); renderOnline(); renderStandings(); renderShips();
+      save(); renderOnline(); renderStandings(); renderShips(); renderGames();
     }
   });
   $('#online-box').addEventListener('submit', async (e) => {

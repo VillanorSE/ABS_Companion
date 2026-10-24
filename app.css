@@ -582,3 +582,10 @@ dialog.tall:not([open]){display:none;}
 /* 0.19: Google sign-in */
 .gsi-btn{min-height:44px;display:flex;justify-content:center;}
 #gsi-btn iframe{color-scheme:normal;}
+
+/* 0.22: view rivals' games */
+.log-view{margin:0 0 12px;}
+.log-view label{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);font-weight:600;}
+.log-view select{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:15px;}
+.rival-game{cursor:default;}
+.nosum{grid-column:1 / 4;font-size:12px;color:var(--muted);margin-top:4px;}
