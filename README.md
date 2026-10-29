@@ -2,7 +2,7 @@
 
 An unofficial mobile companion for the tabletop game *A Billion Suns*: a campaign tracker, an in-game battle tracker, and ship reference cards.
 
-Open the GitHub Pages site on your phone and choose **Add to Home Screen** to install it. It works offline, and your campaign is saved on the device. Use **Overview → Export backup** to move a campaign between devices.
+Open the GitHub Pages site on your phone and choose **Add to Home Screen** to install it. It works offline, and your campaign is saved on the device. Use **Overview → Export backup** to move a campaign between devices. To show your campaign to someone else, use **Share demo copy** instead: it leaves out your sign-in, Google account, team and campaign codes, and device names (photos are optional), and they load it with **Import backup**.
 
 - **Overview**: corporation details and campaign status, rivals and standings, notes and backup/import. Capital and reputation are calculated from the log and unlocks. Rivals can join an **online campaign** by code (see setup below) or swap files with **Share my corporation**; either way you can view each other's fleet stats.
 - **Battle**: in-game tracker with:

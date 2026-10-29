@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.27.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.27.1';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -1484,6 +1484,19 @@
     download(safeName() + '_ABS_Campaign.json', JSON.stringify(Object.assign({}, state, { photoData }), null, 2), 'application/json');
     const np = Object.keys(photoData).length;
     setStatus('Backup downloaded' + (np ? ' (with ' + np + ' photo' + (np === 1 ? '' : 's') + ').' : '.'));
+  });
+  // A copy of the campaign to show someone else: no sign-in, Google account details, team or campaign codes,
+  // or device names, so importing it can't act as this player online. Photos only if asked.
+  $('#btn-demo').addEventListener('click', async () => {
+    let photoData = {};
+    if (confirm('Include game photos in the demo copy?')) {
+      try { photoData = await exportPhotos(); } catch (err) { /* photos unavailable */ }
+    }
+    const copy = JSON.parse(JSON.stringify(state));
+    delete copy.sync; delete copy.team;
+    copy.photoData = photoData;
+    download(safeName() + '_ABS_Demo.json', JSON.stringify(copy, null, 2), 'application/json');
+    setStatus('Demo copy downloaded. It has no sign-in or online codes; notes are included as written.');
   });
   $('#btn-import').addEventListener('click', () => $('#file-json').click());
   $('#btn-import-html').addEventListener('click', () => $('#file-html').click());
