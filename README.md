@@ -7,15 +7,15 @@ Open the GitHub Pages site on your phone and choose **Add to Home Screen** to in
 - **Overview**: corporation details and campaign status, rivals and standings, notes and backup/import. Capital and reputation are calculated from the log and unlocks. Rivals can join an **online campaign** by code (see setup below) or swap files with **Share my corporation**; either way you can view each other's fleet stats.
 - **Battle**: in-game tracker with:
   - the contracts in play and their full reference cards;
-  - round and scale;
+  - round, scale and the opponents in this game (rivals or typed names);
   - the command helm (Seize Initiative / Jump In / Tactical tokens, each with expandable rules);
   - credits ledger;
-  - battlegroup requisitions with damage and ship-loss tracking.
+  - battlegroup requisitions with damage and ship-loss tracking. In an online campaign, damage can be credited to the opponent's battlegroup that dealt it, and **Log attack** records attacks with no damage, hits on contract objects and jump points, or damage to opponents not using the app.
 
-  Use "Finish game → Log" to record the result.
+  Use "Finish game → Log" to record the result. A game's result is its final credits plus "I had the most credits" (ties count), which the app checks once every opponent has logged the game.
 - **Stats**: stat cards for your unlocked ships, or toggle to show all ships.
-- **Unlocks**: ship classes (tap a name for its stats) and competitive advantages (tap ⌄ for full rules).
-- **Log**: per-game log.
+- **Unlocks**: ship classes (tap a name for its stats) and competitive advantages (tap ⌄ for full rules). **Can buy now** hides what you can't afford or research yet.
+- **Log**: per-game log. Game summaries and campaign stats show damage dealt and attacks per battlegroup and ship class; tap Cost/Lost to switch between credits and ship counts.
 
 The **Rules** button (top bar) searches `glossary.js`: short unofficial summaries with rulebook page numbers, for the group's own use alongside the rulebook. Battle also tracks contract cards left and exhaustion (with the game-end check) and keeps the screen awake during games. The Log has campaign stats and game photos (stored on the device and included in backups). Overview can print the campaign sheet or save it as a PDF.
 
