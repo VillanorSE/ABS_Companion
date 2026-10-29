@@ -172,6 +172,7 @@
     $('#hdr-rep-val').textContent = rep;
     $('#st-games').textContent = state.games.length;
     $('#hdr-corp').textContent = state.corp || 'Unnamed corporation';
+    applyBuyFilter();
     renderStandings();
   }
 
@@ -213,7 +214,7 @@
     // Ships: tap the name to show stats; only one open at a time.
     $('#ship-checklist').innerHTML = SHIPS.map((s) => {
       const on = isOwned(s);
-      return `<div class="item-wrap" data-ship-row="${s.id}">
+      return `<div class="item-wrap" data-ship-row="${s.id}" data-buy="${on ? 'own' : s.cost}">
         <div class="item ${on ? 'on' : ''} ${s.always ? 'locked' : ''}">
           <input type="checkbox" data-unlock="${s.id}" ${on ? 'checked' : ''} ${s.always ? 'disabled' : ''} aria-label="Unlock ${esc(s.name)}">
           <button type="button" class="name namebtn" data-toggle-ship="${s.id}" aria-expanded="false">
@@ -226,13 +227,16 @@
       </div>`;
     }).join('');
 
-    // Advantages: chevron expands the full rules.
+    // Advantages: chevron expands the full rules; each tree's heading collapses it.
+    const closed = prefs.treeClosed || {};
     $('#adv-checklist').innerHTML = ADVANTAGES.map((t) => `
-      <div class="tree"><h3>${esc(t.tree)}</h3><div class="list">
+      <div class="tree">
+        <h3><button type="button" class="tree-btn" data-tree="${esc(t.tree)}" aria-expanded="${!closed[t.tree]}">${esc(t.tree)}${CHEVRON}</button></h3>
+        <div class="list" ${closed[t.tree] ? 'hidden' : ''}>
         ${t.items.map(([id, lvl, name, desc]) => {
           const on = !!state.unlocked[id];
           const blocked = !on && !advEligible(id, state.unlocked);
-          return `<div class="item-wrap">
+          return `<div class="item-wrap" data-buy="${on ? 'own' : blocked ? 'no' : lvl}">
             <div class="item ${on ? 'on' : ''} ${blocked ? 'blocked' : ''}">
               <input type="checkbox" data-unlock="${id}" ${on ? 'checked' : ''} aria-label="Research ${esc(name)}">
               <span class="name"><span class="lvl">L${lvl}</span>${esc(name)}<small>${esc(desc)}</small>${blocked ? '<small class="needs">Prerequisites not met</small>' : ''}</span>
@@ -244,32 +248,33 @@
         }).join('')}
       </div></div>`).join('');
     $$('#adv-checklist .adv-full').forEach((el) => { el.hidden = true; });
-    renderBuyNow();
+    applyBuyFilter();
   }
 
-  // Unlock options you can take right now: affordable, not owned, prerequisites met.
-  function renderBuyNow() {
-    const avail = capital().avail;
-    const ships = SHIPS.filter((s) => !isOwned(s)).map((s) => ({ id: s.id, name: s.name, cost: s.cost, kind: 'Mass ' + s.mass }));
-    const advs = ALL_ADVS.filter((a) => advEligible(a.id, state.unlocked))
-      .map((a) => ({ id: a.id, name: a.name, cost: a.lvl, kind: 'L' + a.lvl + ' ' + a.tree }));
-    const row = (o, buy) => `<div class="buy-row ${buy ? '' : 'later'}"><span class="bn">${esc(o.name)}<small>${esc(o.kind)}</small></span>
-      <span class="cost">${o.cost}</span>${buy ? `<button type="button" class="btn sm" data-buy="${o.id}">Buy</button>` : ''}</div>`;
-    const byCost = (x, y) => x.cost - y.cost;
-    const split = (items) => [items.filter((o) => o.cost <= avail).sort(byCost), items.filter((o) => o.cost > avail).sort(byCost)];
-    const [shipsNow] = split(ships), [advsNow] = split(advs);
-    const group = (title, items, empty) => `<div class="buy-group"><h4>${title}</h4>
-      ${items.length ? items.map((o) => row(o, true)).join('') : `<p class="none">${empty}</p>`}</div>`;
-    $('#buynow-count').textContent = '(' + (shipsNow.length + advsNow.length) + ')';
-    $('#buynow-list').innerHTML =
-      group('Ship classes', shipsNow, 'No ship classes affordable right now.') +
-      group('Competitive advantages', advsNow, 'No advantages available right now.') +
-      '<p class="hint small">Only one Level 0 advantage, and you may research one advantage per campaign game.</p>';
+  // "Can buy now": hide what you don't own and can't afford (or research yet). Capital changes as games are logged.
+  function applyBuyFilter() {
+    const on = !!prefs.buyNow, avail = capital().avail;
+    $('#opt-buynow').checked = on;
+    let n = 0;
+    $$('#view-unlocks [data-buy]').forEach((row) => {
+      const v = row.dataset.buy;
+      const can = v !== 'own' && v !== 'no' && num(v) <= avail;
+      if (can) n++;
+      row.hidden = on && v !== 'own' && !can;
+    });
+    $$('#adv-checklist .tree').forEach((t) => { t.hidden = on && !t.querySelector('[data-buy]:not([hidden])'); });
+    $('#buynow-count').textContent = '(' + n + ')';
   }
-  $('#buynow-list').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-buy]');
+  $('#opt-buynow').addEventListener('change', (e) => { prefs.buyNow = e.target.checked; savePrefs(); applyBuyFilter(); });
+  $('#adv-checklist').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tree]');
     if (!b) return;
-    setUnlocked(b.dataset.buy, true);
+    prefs.treeClosed = prefs.treeClosed || {};
+    const open = b.getAttribute('aria-expanded') !== 'true';
+    if (open) delete prefs.treeClosed[b.dataset.tree]; else prefs.treeClosed[b.dataset.tree] = true;
+    savePrefs();
+    b.setAttribute('aria-expanded', String(open));
+    b.closest('.tree').querySelector('.list').hidden = !open;
   });
 
   function setOpen(btn, body, open) {

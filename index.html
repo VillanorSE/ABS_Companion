@@ -45,11 +45,12 @@
     </div>
 
     <h2 class="sect">Campaign status</h2>
+    <div class="tiles status3">
+      <div class="tile calc"><span class="lab">Reputation</span><span class="big" id="st-rep">0</span><span class="note">Incl. bought</span></div>
+      <div class="tile calc"><span class="lab">Games</span><span class="big" id="st-games">0</span><span class="note">In the log</span></div>
+      <div class="tile calc"><span class="lab">Capital</span><span class="big cap"><span id="st-avail" class="avail">10</span><span class="of">/<span id="st-total">10</span></span></span><span class="note">Avail. / earned</span></div>
+    </div>
     <div class="tiles">
-      <div class="tile calc"><span class="lab">Total reputation</span><span class="big" id="st-rep">0</span><span class="note">Log rep gained + bought rep</span></div>
-      <div class="tile calc"><span class="lab">Games played</span><span class="big" id="st-games">0</span><span class="note">Games in the log</span></div>
-      <div class="tile calc"><span class="lab">Total capital earned</span><span class="big" id="st-total">10</span><span class="note">10 + sum of game Scales</span></div>
-      <div class="tile calc"><span class="lab">Available to spend</span><span class="big" id="st-avail">10</span><span class="note">Earned − unlocks − bought rep</span></div>
       <div class="tile span2">
         <label><span class="lab">Current campaign scale <small>(campaign rules start at 3, max 10)</small></span><input class="big" type="number" inputmode="numeric" min="1" max="10" placeholder="3" data-bind="campScale"></label>
         <label class="scale-rule"><span>After logging a game</span>
@@ -129,10 +130,7 @@
   <section class="view" id="view-unlocks" data-view="unlocks" hidden>
     <div class="avail-bar"><span>Capital available</span><b id="unl-avail">10</b></div>
     <p class="hint">Tick a ship class or competitive advantage when you buy it. Its cost comes out of your available capital.</p>
-    <details class="fold buynow" id="buynow" open>
-      <summary>Can buy now <span id="buynow-count"></span></summary>
-      <div id="buynow-list"></div>
-    </details>
+    <label class="switch noncamp buynow-switch"><input type="checkbox" id="opt-buynow"> <span>Can buy now <span id="buynow-count"></span><small>Show only what you own or can afford and research now. One Level 0 advantage, and one advantage per campaign game.</small></span></label>
     <h2 class="sect">Ship classes <span class="rt">Cost</span></h2>
     <p class="hint small">Tap a ship’s name to see its stats.</p>
     <div class="list" id="ship-checklist"></div>
@@ -180,13 +178,6 @@
     <h2 class="sect">Credits</h2>
     <div class="credits" id="b-credits-card">
       <div class="cred-main"><b id="b-credits">0</b><span id="b-credits-state">Break even</span></div>
-      <div class="chips">
-        <button type="button" class="chip" data-earn="1">+1</button>
-        <button type="button" class="chip" data-earn="2">+2</button>
-        <button type="button" class="chip" data-earn="3">+3</button>
-        <button type="button" class="chip" data-earn="5">+5</button>
-        <button type="button" class="chip neg" data-earn="-1">−1</button>
-      </div>
       <form class="earn-form" id="b-earn-form">
         <input type="number" inputmode="numeric" name="amt" placeholder="± credits" aria-label="Credits amount" required>
         <input type="text" name="note" placeholder="Source (optional)" aria-label="Note">

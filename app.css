@@ -105,6 +105,9 @@ input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);flex:none
 .item.locked{cursor:default;opacity:.8;}
 .tree{margin-top:12px;}
 .tree h3{font-size:14px;margin:0 0 6px 2px;color:var(--text);}
+.tree-btn{display:flex;align-items:center;gap:6px;width:100%;border:0;background:none;padding:4px 0;color:inherit;font:inherit;font-weight:inherit;cursor:pointer;text-align:left;}
+.tree-btn .chev{width:18px;height:18px;transition:transform .15s;transform:rotate(-90deg);}
+.tree-btn[aria-expanded="true"] .chev{transform:none;}
 .lvl{display:inline-block;font-size:11px;font-weight:800;border:1px solid var(--line);border-radius:6px;
   padding:1px 5px;margin-right:6px;color:var(--muted);vertical-align:1px;}
 .badge{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:5px;padding:1px 5px;
@@ -641,3 +644,13 @@ dialog.tall:not([open]){display:none;}
   .unit-tbl .u-sh::before{content:" · ";color:var(--muted);}
   .unit-btn{text-decoration:none;cursor:default;}
 }
+
+/* campaign status in one row */
+.tiles.status3{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:10px;}
+.status3 .tile{padding:10px;}
+.status3 .lab,.status3 .note{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.status3 .cap{white-space:nowrap;}
+.status3 .cap .avail{color:var(--good);}
+.status3 .cap .avail.neg{color:var(--bad);}
+.status3 .cap .of{font-size:18px;color:var(--muted);font-weight:700;margin-left:2px;}
+.buynow-switch .buynow-count,#buynow-count{font-weight:400;color:var(--muted);}
