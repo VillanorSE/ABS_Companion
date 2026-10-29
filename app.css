@@ -617,3 +617,27 @@ dialog.tall:not([open]){display:none;}
 .opp-chip.add{border-style:dashed;color:var(--muted);}
 .switch.house-rule{margin-top:12px;align-items:flex-start;color:var(--text);}
 .switch.house-rule small{display:block;color:var(--muted);font-size:12px;}
+
+/* who did the damage / log attack popups */
+.src-list{display:flex;flex-direction:column;gap:6px;margin:8px 0 12px;}
+.src-h{margin:4px 2px 0;font-size:12px;font-weight:600;color:var(--muted);}
+.src{text-align:left;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface2);color:var(--text);
+  font:inherit;font-size:15px;cursor:pointer;}
+.src small{display:block;font-size:12px;color:var(--muted);}
+.src.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);}
+.amt-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;font-weight:600;}
+.amt-row .stepper{width:140px;}
+#hit-apply:disabled,#atk-apply:disabled{opacity:.45;cursor:default;}
+.bg-log{grid-column:1 / -1;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);}
+.bg-undo{grid-column:1 / -1;margin:0;font-size:13px;color:var(--muted);}
+.bg-undo button{border:0;background:none;color:var(--accent);font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;padding:0 4px;}
+
+/* cost/lost in credits or ship counts; wide screens show both */
+.unit-btn{border:0;background:none;color:inherit;font:inherit;font-weight:inherit;padding:0;cursor:pointer;text-decoration:underline dotted;}
+.unit-cr .u-sh,.unit-ships .u-cr{display:none;}
+.ctab td small{display:block;font-size:11px;color:var(--muted);font-weight:400;}
+@media (min-width:720px){
+  .unit-tbl .u-cr,.unit-tbl .u-sh{display:inline;}
+  .unit-tbl .u-sh::before{content:" · ";color:var(--muted);}
+  .unit-btn{text-decoration:none;cursor:default;}
+}

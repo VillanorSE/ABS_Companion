@@ -35,6 +35,10 @@
       contracts: [],           // contract ids, e.g. 'J♠'
       advUsed: {},             // once-per-game/round advantages used, e.g. { adv_31: true }
       opps: [],                // opponents in this game: {id: rival corpId} or {name} for someone not in the app
+      bid: newId(),            // this battle's id, so opponents' damage records can point at its battlegroups
+      oppBids: {},             // corpId -> that opponent's battle id, once seen in their live battle
+      hits: [],                // damage taken: {to, n, r, by, bid, bg, ship, nm} or {to, n, r, src: 'dud'|'other'}
+      atk: [],                 // attacks this fleet logged itself: {bg, r, k: 'miss'|'obj'|'dmg', n, obj}
     };
   }
 
@@ -349,7 +353,7 @@
           ${resBadge(g)}
           <span class="meta">${bits.join(' · ')}</span>
           ${g.summary ? `<button type="button" class="sumbtn" data-sum="r${i}" aria-expanded="false">Game summary ${CHEVRON}</button>
-            <div class="sum-wrap" hidden>${summaryHtml(g.summary)}</div>` : '<span class="nosum">No summary shared for this game</span>'}
+            <div class="sum-wrap" hidden>${summaryHtml(g.summary, r.corpId)}</div>` : '<span class="nosum">No summary shared for this game</span>'}
         </div>`;
       }).join('');
   }
@@ -382,7 +386,7 @@
       if (g.rep) bits.push(esc(signedRep(g.rep)) + ' rep');
       if (g.boughtRep) bits.push('bought rep (−10)');
       if (g.date) bits.push(esc(g.date));
-      const extra = g.notes || '';
+      const extra = [g.mostNote, g.notes].filter(Boolean).join('\n');
       return `<div class="game" data-game="${i}" role="button" tabindex="0">
         <span class="num">${i + 1}</span>
         <span class="opp">${g.opp ? 'vs ' + esc(g.opp) : '<span style="color:var(--muted)">Game ' + (i + 1) + '</span>'}</span>
@@ -404,7 +408,7 @@
   let fromBattle = false;    // saving this dialog finishes the current Battle
   let pendingSummary = null; // post-game summary to store with the logged game
   let repTouched = false;    // stop auto-suggesting rep once the player edits it
-  let pendingOpps = null;    // rival corpIds of the opponents, when the game comes from the Battle tab
+  let pendingOpps = null;    // {ids, guests}: the opponents, when the game comes from the Battle tab
 
   function openGame(i, prefill) {
     editing = i;
@@ -419,7 +423,7 @@
       if (el.type === 'checkbox') el.checked = !!g[el.name];
       else el.value = g[el.name] == null ? '' : g[el.name];
     });
-    pendingOpps = i >= 0 ? null : (prefill && prefill.oppIds) || null;
+    pendingOpps = i >= 0 ? null : (prefill && prefill.oppMeta) || null;
     suggestRep();
     dialogPhotos = (g.photos || []).slice();
     renderDialogPhotos();
@@ -479,11 +483,13 @@
       g.id = old.id || 'g' + newId(); g.at = old.at || new Date().toISOString();
       if (old.summary) g.summary = old.summary;
       if (old.contracts) g.contracts = old.contracts;
-      if (old.oppIds) g.oppIds = old.oppIds;
+      ['oppIds', 'guests', 'mostNote', 'mostLocked'].forEach((k) => { if (old[k] != null) g[k] = old[k]; });
+      if (g.most !== !!old.most) { g.mostLocked = true; delete g.mostNote; }   // the player's own call stands
       state.games[editing] = g;
     } else {
       if (fromBattle && pendingSummary) { g.summary = pendingSummary; g.contracts = pendingSummary.contracts; }
-      if (pendingOpps && pendingOpps.length) g.oppIds = pendingOpps.slice();
+      if (pendingOpps && pendingOpps.ids.length) g.oppIds = pendingOpps.ids.slice();
+      if (pendingOpps && pendingOpps.guests) g.guests = pendingOpps.guests;
       g.id = 'g' + newId(); g.at = new Date().toISOString();
       state.games.push(g);
       applyScaleRule();
@@ -803,12 +809,12 @@
   }
 
   // +1/-1 damage token; destroys ships when damage reaches Silhouette (rulebook p.27).
-  function damageBg(g, d) {
+  function damageBg(g, d, n) {
     const s = shipById(g.ship);
     const sil = effSil(s);
     if (d < 0) { g.msg = ''; g.dmg = Math.max(0, (g.dmg || 0) - 1); return; }
     if (g.count <= 0) return;
-    g.dmg = (g.dmg || 0) + 1;
+    g.dmg = (g.dmg || 0) + (n || 1);
     let killed = 0;
     while (g.dmg >= sil && g.count > 0) { g.count--; g.dmg -= sil; killed++; }
     if (killed) {
@@ -818,8 +824,124 @@
     if (g.count === 0) { g.status = 'dead'; g.dmg = 0; }
   }
 
+  const battleId = () => (B().bid = B().bid || newId());
+  const isCrit = (g) => g.status === 'in' && g.count > 0 && (g.dmg || 0) > shipById(g.ship).mass;
+  const bgLabel = (id, name, count, ship) => `${esc(name || 'BG ' + id)} · ${count}× ${esc((shipById(ship) || {}).name || ship)}`;
+
+  // Opponents in this game whose battle is live in the online campaign (and recent enough to trust).
+  function liveOpps() {
+    const rivals = state.rivals || {};
+    return (B().opps || []).map((o) => o.id && rivals[o.id])
+      .filter((r) => r && r.online && r.live && Array.isArray(r.live.bgs) && Date.now() - Date.parse(r.sharedAt || 0) < 6 * 3600e3)
+      .map((r) => ({ id: r.corpId, r, live: r.live }));
+  }
+
+  // One-step undo per battlegroup, for a mis-tap in either popup (kept in memory only).
+  const undo = {};
+  function setUndo(g, text, restore) { undo[g.id] = { bid: battleId(), round: B().round, text, restore }; }
+  function undoFor(g) { const u = undo[g.id]; return u && u.bid === battleId() && u.round === B().round ? u : null; }
+
+  const hitDlg = $('#hit-dialog');
+  let hitCtx = null;
+  function openHit(g) {
+    const opps = liveOpps(), last = B().lastHit || {};
+    const opp = opps.find((o) => o.id === last.opp) || opps[0];
+    hitCtx = { to: g.id, n: 1, opp: opp ? opp.id : null, src: null };
+    if (opp && opp.id === last.opp && opp.live.bgs.some((x) => x[0] === last.bg)) hitCtx.src = 'bg:' + last.bg;
+    renderHit();
+    hitDlg.showModal();
+    refreshLive(120000).then(() => { if (hitDlg.open) renderHit(); });
+  }
+  function renderHit() {
+    const g = B().bgs.find((x) => x.id === hitCtx.to);
+    const opps = liveOpps();
+    const opp = opps.find((o) => o.id === hitCtx.opp) || opps[0];
+    if (opp) hitCtx.opp = opp.id;
+    $('#hit-title').innerHTML = 'Damage to ' + bgLabel(g.id, g.name, g.count, g.ship);
+    $('#hit-opps').hidden = opps.length < 2;
+    $('#hit-opps').innerHTML = opps.map((o) => `<button type="button" class="opp-chip ${o.id === hitCtx.opp ? 'on' : ''}" data-hopp="${esc(o.id)}">${esc(oppName({ id: o.id }))}</button>`).join('');
+    const srcs = (opp ? opp.live.bgs.map(([id, ship, count, name]) => ['bg:' + id, bgLabel(id, name, count, ship)]) : [])
+      .concat([['other', 'Contract or other']])
+      .concat(isCrit(g) ? [['dud', 'Dud while systems critical (own weapon)']] : []);
+    $('#hit-src').innerHTML = (opp ? `<p class="src-h">${esc(oppName({ id: opp.id }))}’s battlegroups in play</p>` : '') +
+      srcs.map(([k, label]) => `<button type="button" class="src ${hitCtx.src === k ? 'on' : ''}" data-hsrc="${k}" aria-pressed="${hitCtx.src === k}">${label}</button>`).join('');
+    $('#hit-n').textContent = hitCtx.n;
+    $('#hit-fresh').textContent = opp ? 'Their battlegroups as of ' + ago(opp.r.sharedAt) + '. Their phone sends changes about 15 s after they stop tapping.' : '';
+    $('#hit-apply').disabled = !hitCtx.src;
+  }
+  hitDlg.addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    if (t.dataset.hopp) { hitCtx.opp = t.dataset.hopp; hitCtx.src = null; }
+    else if (t.dataset.hsrc) hitCtx.src = t.dataset.hsrc;
+    else if (t.dataset.hn) hitCtx.n = Math.min(30, Math.max(1, hitCtx.n + num(t.dataset.hn)));
+    else if (t.id === 'hit-cancel') { hitDlg.close(); return; }
+    else if (t.id === 'hit-apply') { applyHit(); return; }
+    renderHit();
+  });
+  function applyHit() {
+    const b = B(), c = hitCtx;
+    const g = b.bgs.find((x) => x.id === c.to);
+    const before = { count: g.count, dmg: g.dmg, status: g.status, msg: g.msg }, hitsLen = b.hits.length;
+    damageBg(g, 1, c.n);
+    let from = c.src === 'dud' ? 'its own dud' : 'a contract or other';
+    if (c.src.startsWith('bg:')) {
+      const o = liveOpps().find((x) => x.id === c.opp);
+      const x = o && o.live.bgs.find((y) => y[0] === +c.src.slice(3));
+      if (x) {
+        b.hits.push({ to: g.id, n: c.n, r: b.round, by: o.id, bid: o.live.bid, bg: x[0], ship: x[1], nm: x[3] || '' });
+        b.lastHit = { opp: o.id, bg: x[0] };
+        from = (x[3] || 'BG ' + x[0]) + ' (' + oppName({ id: o.id }) + ')';
+      }
+    } else b.hits.push({ to: g.id, n: c.n, r: b.round, src: c.src });
+    setUndo(g, c.n + ' damage from ' + from, () => { Object.assign(g, before); b.hits.length = hitsLen; });
+    hitDlg.close();
+    save(); renderBattle();
+  }
+
+  const atkDlg = $('#atk-dialog');
+  let atkCtx = null;
+  function openAtk(g) {
+    atkCtx = { bg: g.id, k: null, n: 1 };
+    renderAtk();
+    atkDlg.showModal();
+  }
+  function renderAtk() {
+    const b = B(), g = b.bgs.find((x) => x.id === atkCtx.bg);
+    const objs = [...new Set((b.contracts || []).map((id) => CONTRACTS.find((c) => c.id === id)).filter(Boolean)
+      .flatMap((c) => (c.objects || []).map((o) => o[0])))];
+    const opts = [['miss', 'No damage <small>missed, or every hit shielded</small>']]
+      .concat(objs.concat('Jump point', 'Other object').map((o) => ['obj:' + o, 'Hit ' + esc(o)]))
+      .concat(liveOpps().length ? [] : [['dmg', 'Damage dealt <small>to an opponent not in the app</small>']]);
+    $('#atk-title').innerHTML = bgLabel(g.id, g.name, g.count, g.ship) + ' attacked';
+    $('#atk-src').innerHTML = opts.map(([k, label]) => `<button type="button" class="src ${atkCtx.k === k ? 'on' : ''}" data-asrc="${esc(k)}" aria-pressed="${atkCtx.k === k}">${label}</button>`).join('');
+    $('#atk-amt').hidden = !atkCtx.k || atkCtx.k === 'miss';
+    $('#atk-n').textContent = atkCtx.n;
+    $('#atk-apply').disabled = !atkCtx.k;
+  }
+  atkDlg.addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    if (t.dataset.asrc) atkCtx.k = t.dataset.asrc;
+    else if (t.dataset.an) atkCtx.n = Math.min(30, Math.max(1, atkCtx.n + num(t.dataset.an)));
+    else if (t.id === 'atk-cancel') { atkDlg.close(); return; }
+    else if (t.id === 'atk-apply') {
+      const b = B(), g = b.bgs.find((x) => x.id === atkCtx.bg), k = atkCtx.k;
+      const a = { bg: g.id, r: b.round, k: k === 'miss' ? 'miss' : k === 'dmg' ? 'dmg' : 'obj', n: k === 'miss' ? 0 : atkCtx.n };
+      if (a.k === 'obj') a.obj = k.slice(4);
+      b.atk.push(a);
+      const len = b.atk.length;
+      setUndo(g, a.k === 'miss' ? 'Attack with no damage logged' : a.n + ' damage ' + (a.obj ? 'to ' + a.obj : 'dealt') + ' logged',
+        () => { if (b.atk.length === len) b.atk.pop(); });
+      atkDlg.close();
+      save(); renderBattle(); return;
+    }
+    renderAtk();
+  });
+
   function renderBattle() {
     const b = B();
+    b.hits = b.hits || []; b.atk = b.atk || [];
     $('#b-round').textContent = b.round;
     $('#b-scale').textContent = battleScale();
     $('#b-noncamp').checked = !!b.nonCampaign;
@@ -914,6 +1036,9 @@
               <div class="stepper sm"><button type="button" data-bgdmg="${g.id}" data-d="-1" aria-label="Remove damage">−</button><button type="button" data-bgdmg="${g.id}" data-d="1" aria-label="Add damage">+</button></div></div>
           </div>
           ${g.msg ? `<p class="bg-msg">${esc(g.msg)}</p>` : ''}
+          ${canAct ? `<div class="bg-log"><button type="button" class="btn sm" data-bgatk="${g.id}">Log attack</button>
+            <span>${(() => { const n = b.atk.filter((a) => a.bg === g.id).length; return n ? n + ' logged' : 'No damage, or hits on objects'; })()}</span></div>` : ''}
+          ${undoFor(g) ? `<p class="bg-undo">${esc(undoFor(g).text)} <button type="button" data-bgundo="${g.id}">Undo</button></p>` : ''}
         </div>
       </div>`;
     }).join('') : '<p class="empty sm">No battlegroups requisitioned yet.</p>';
@@ -1024,7 +1149,15 @@
       b.advUsed = b.advUsed || {};
       if (b.advUsed[t.dataset.use]) delete b.advUsed[t.dataset.use]; else b.advUsed[t.dataset.use] = true;
     } else if (t.dataset.bgdmg) {
-      damageBg(b.bgs.find((x) => x.id === +t.dataset.bgdmg), num(t.dataset.d));
+      const g = b.bgs.find((x) => x.id === +t.dataset.bgdmg);
+      // Ask who did it only when there's a choice to make: a live opponent, or a dud while systems critical.
+      if (num(t.dataset.d) > 0 && g.count > 0 && (liveOpps().length || isCrit(g))) { openHit(g); return; }
+      damageBg(g, num(t.dataset.d));
+    } else if (t.dataset.bgatk) {
+      openAtk(b.bgs.find((x) => x.id === +t.dataset.bgatk)); return;
+    } else if (t.dataset.bgundo) {
+      const u = undoFor(b.bgs.find((x) => x.id === +t.dataset.bgundo));
+      if (u) { u.restore(); delete undo[t.dataset.bgundo]; }
     } else if (t.dataset.bgships) {
       const g = b.bgs.find((x) => x.id === +t.dataset.bgships);
       const start = g.start || g.count;
@@ -1187,13 +1320,19 @@
     const s = pendingSummary;
     $('#summary-dialog').close();
     const opps = B().opps || [];
+    const ids = opps.filter((o) => o.id).map((o) => o.id), guests = opps.length - ids.length;
+    // Tick "most credits" when every opponent's current credits are known from their live battle.
+    const lo = liveOpps();
+    const known = ids.length && !guests && ids.every((id) => lo.some((o) => o.id === id && o.live.cr != null));
     openGame(-1, { scale: s.scale, credits: String(s.credits), notes: s.rounds + ' rounds.',
-      opp: opps.map(oppName).join(', '), oppIds: opps.filter((o) => o.id).map((o) => o.id) });
+      opp: opps.map(oppName).join(', '), oppMeta: { ids, guests },
+      most: known ? s.credits >= Math.max(...lo.map((o) => o.live.cr)) : false });
   });
 
   // Snapshot of the finished battle, stored with the logged game.
   function buildSummary() {
     const b = B();
+    linkOppBattles();
     const rounds = [];
     let total = 0;
     for (let r = 1; r <= b.round; r++) {
@@ -1205,19 +1344,69 @@
     }
     const fleet = b.bgs.map((g) => {
       const s = shipById(g.ship), start = g.start || g.count;
-      return { name: g.name || 'BG ' + g.id, ship: s.name, count: start, lost: start - g.count, cost: start * s.cost, round: g.round, status: g.status };
+      return { id: g.id, name: g.name || 'BG ' + g.id, ship: s.name, count: start, lost: start - g.count, cost: start * s.cost, round: g.round, status: g.status };
     });
     return {
       scale: battleScale(), rounds: b.round, credits: battleCredits(),
       earned: rounds.reduce((t, r) => t + r.earned, 0), spent: rounds.reduce((t, r) => t + r.spent, 0),
       byRound: rounds, fleet, contracts: (b.contracts || []).slice(),
+      bid: battleId(), oppBids: Object.assign({}, b.oppBids), hits: (b.hits || []).slice(), atk: (b.atk || []).slice(),
     };
   }
 
-  function summaryHtml(s) {
+  // Every battle this phone knows about, as {corp, bid, hits}: mine and rivals', logged and in progress.
+  function battleSources() {
+    const out = [], seen = new Set();
+    const add = (corp, s) => {
+      if (!s || !s.bid || seen.has(corp + ':' + s.bid)) return;
+      seen.add(corp + ':' + s.bid);
+      out.push({ corp, bid: s.bid, hits: s.hits || [] });
+    };
+    state.games.forEach((g) => add(state.corpId, g.summary));
+    add(state.corpId, B());
+    Object.values(state.rivals || {}).forEach((r) => { (r.games || []).forEach((g) => add(r.corpId, g.summary)); add(r.corpId, r.live); });
+    return out;
+  }
+  // Damage dealt by each battlegroup of a corporation's battle: hits its victims recorded,
+  // plus the attacks it logged itself (no damage, objects, or damage to someone not in the app).
+  function dealtStats(corp, bid, atk, sources) {
+    const m = {};
+    const get = (id) => (m[id] = m[id] || { bg: 0, obj: 0, any: 0, hit: 0, miss: 0 });
+    (sources || battleSources()).forEach((src) => src.hits.forEach((h) => {
+      if (h.by === corp && h.bid === bid) { const k = get(h.bg); k.bg += h.n; k.hit++; }
+    }));
+    (atk || []).forEach((a) => {
+      const k = get(a.bg);
+      if (a.k === 'miss') k.miss++;
+      else { k.hit++; if (a.k === 'obj') k.obj += a.n; else k.any += a.n; }
+    });
+    return m;
+  }
+  const ZERO_DEALT = { bg: 0, obj: 0, any: 0, hit: 0, miss: 0 };
+  const dealtTotal = (k) => k.bg + k.obj + k.any;
+
+  // Cost and losses show in credits or ship counts (tap a header to switch); wide screens show both.
+  const unitCls = () => (prefs.unit === 'ships' ? 'unit-ships' : 'unit-cr');
+  const uCell = (cr, ships) => `<span class="u-cr">${Math.round(cr)}</span><span class="u-sh">${ships}×</span>`;
+  const uHead = (cr, ships) => `<button type="button" class="unit-btn" data-unit="1" aria-label="Switch between credits and ship counts"><span class="u-cr">${cr}</span><span class="u-sh">${ships}</span></button>`;
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-unit]')) return;
+    prefs.unit = prefs.unit === 'ships' ? 'cr' : 'ships'; savePrefs();
+    $$('.unit-tbl').forEach((t) => { t.classList.toggle('unit-ships', prefs.unit === 'ships'); t.classList.toggle('unit-cr', prefs.unit !== 'ships'); });
+  });
+  function dealtCell(k) {
+    const parts = [k.bg && k.bg + ' bg', k.obj && k.obj + ' obj', k.any && k.any + ' other'].filter(Boolean);
+    return `<td>${dealtTotal(k)}${parts.length > 1 || k.obj || k.any ? `<small>${parts.join(' · ')}</small>` : ''}</td>`;
+  }
+  const attacksCell = (k) => `<td>${k.hit + k.miss}${k.miss ? `<small>${k.miss} no dmg</small>` : ''}</td>`;
+
+  function summaryHtml(s, corp) {
     const max = Math.max(1, ...s.byRound.map((r) => Math.max(r.earned, r.spent)));
     const bar = (v, cls) => `<span class="bar ${cls}" style="width:${(v / max) * 100}%"></span>`;
     const shipsBought = s.fleet.reduce((t, g) => t + g.count, 0), shipsLost = s.fleet.reduce((t, g) => t + g.lost, 0);
+    const st = s.bid ? dealtStats(corp || state.corpId, s.bid, s.atk) : null;
+    const duds = Object.entries((s.hits || []).filter((h) => h.src === 'dud').reduce((m, h) => { m[h.to] = (m[h.to] || 0) + h.n; return m; }, {}))
+      .map(([id, n]) => ((s.fleet.find((f) => f.id === +id) || {}).name || 'BG ' + id) + ' took ' + n);
     return `<div class="sum">
       <div class="sum-head ${s.credits > 0 ? 'profit' : s.credits < 0 ? 'deficit' : ''}">
         <b>${signed(s.credits)}</b><span>${s.credits > 0 ? 'Profit' : s.credits < 0 ? 'Deficit' : 'Break even'} · ${s.rounds} round${s.rounds === 1 ? '' : 's'} · Scale ${s.scale}</span></div>
@@ -1228,8 +1417,14 @@
       <div class="rounds">${s.byRound.map((r) => `<div class="rrow"><span class="rl">R${r.round}</span>
         <div class="rbars">${bar(r.earned, 'earn')}${bar(r.spent, 'spend')}</div>
         <span class="rv"><span class="pos">+${r.earned}</span> <span class="neg">−${r.spent}</span> = <b>${signed(r.total)}</b></span></div>`).join('')}</div>
-      ${s.fleet.length ? `<h4>Fleet</h4><table class="ctab"><thead><tr><th>Battlegroup</th><th>Rd</th><th>Cost</th><th>Lost</th></tr></thead><tbody>
-        ${s.fleet.map((g) => `<tr><td>${esc(g.name)} · ${g.count}× ${esc(g.ship)}</td><td>${g.round}</td><td>${g.cost}</td><td class="${g.lost ? 'neg' : ''}">${g.lost}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${s.fleet.length ? `<h4>Fleet</h4><table class="ctab unit-tbl ${unitCls()}"><thead><tr><th>Battlegroup</th><th>Rd</th>
+          <th>${uHead('Cost', 'Ships')}</th><th>${uHead('Lost', 'Lost')}</th>${st ? '<th>Dealt</th><th>Attacks</th>' : ''}</tr></thead><tbody>
+        ${s.fleet.map((g) => {
+          const each = g.count ? g.cost / g.count : 0, k = (st && st[g.id]) || ZERO_DEALT;
+          return `<tr><td>${esc(g.name)} · ${esc(g.ship)}</td><td>${g.round}</td><td>${uCell(g.cost, g.count)}</td>
+            <td class="${g.lost ? 'neg' : ''}">${uCell(g.lost * each, g.lost)}</td>${st ? dealtCell(k) + attacksCell(k) : ''}</tr>`;
+        }).join('')}</tbody></table>
+        ${duds.length ? `<p class="hint small">Duds while systems critical: ${duds.map(esc).join(', ')}.</p>` : ''}` : ''}
     </div>`;
   }
   $('#btn-discard').addEventListener('click', () => {
@@ -1246,6 +1441,7 @@
     });
     window.scrollTo(0, 0);
     updateWakeLock();
+    if (tab === 'battle') refreshLive(60000).then(() => { if (prefs.tab === 'battle') renderBattle(); });
   }
   $$('.tabbar button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $('#hdr-rep').addEventListener('click', () => showTab('log'));
@@ -1345,6 +1541,44 @@
     setStatus('Campaign reset.');
   });
 
+  // An opponent's logged copy of one of my games: matched by battle id, or by date when neither saw the other live.
+  function findOppGame(r, g) {
+    const linked = (mine, x) => {
+      const s = x.summary || {};
+      return !!(s.bid && mine.bid && ((mine.oppBids || {})[r.corpId] === s.bid || (s.oppBids || {})[state.corpId] === mine.bid));
+    };
+    const byBid = (r.games || []).find((x) => linked(g.summary || {}, x));
+    if (byBid) return byBid;
+    // Same date only counts when it can't be confused with another game that day, on either side.
+    const sameDay = (r.games || []).filter((x) => (x.oppIds || []).includes(state.corpId) && !!x.date && x.date === g.date &&
+      !state.games.some((m) => m !== g && linked(m.summary || {}, x)));
+    const mineThatDay = state.games.filter((m) => (m.oppIds || []).includes(r.corpId) && m.date === g.date);
+    return sameDay.length === 1 && mineThatDay.length === 1 ? sameDay[0] : null;
+  }
+  // "I had the most credits" can be ticked straight away; once every opponent has logged the game,
+  // correct it (and the rep it gave) if it was wrong. A player who changes it by hand keeps their call.
+  function checkMostClaims() {
+    let changed = false;
+    state.games.forEach((g) => {
+      if (!g.oppIds || !g.oppIds.length || g.guests || g.mostLocked || !hasCredits(g)) return;
+      const theirs = g.oppIds.map((id) => {
+        const r = (state.rivals || {})[id], x = r && findOppGame(r, g);
+        return x && hasCredits(x) ? { name: r.corp || r.ceo || 'A rival', cr: num(x.credits) } : null;
+      });
+      if (theirs.some((t) => !t)) return;
+      const top = Math.max(...theirs.map((t) => t.cr));
+      const actual = num(g.credits) >= top;   // ties count for everyone
+      if (actual === !!g.most) return;
+      g.most = actual;
+      g.rep = String(num(g.rep) + (actual ? 1 : -1));
+      const best = theirs.filter((t) => t.cr === top).map((t) => t.name).join(' & ');
+      g.mostNote = actual ? `Rep +1: you had the most credits (${g.credits}; ${best} had ${top}).`
+        : `Rep −1: ${best} finished with ${top} credits vs your ${g.credits}.`;
+      changed = true;
+    });
+    if (changed) { save(); renderGames(); renderStatus(); renderStandings(); }
+  }
+
   // ---------- rivals (shared corporation files) ----------
   const SHARE_TYPE = 'abs-companion-corp';
   function sharePayload() {
@@ -1357,6 +1591,18 @@
       games: state.games.map((g) => ({ id: g.id, scale: g.scale, opp: g.opp, oppIds: g.oppIds, most: !!g.most, result: g.result || '', credits: g.credits, rep: g.rep, boughtRep: !!g.boughtRep, date: g.date, summary: g.summary || null })),
       purchases: state.purchases || [],
       teamNames: state.team && state.team.code ? uniqueNames(state.team.names) : undefined,
+      live: liveBlock(),
+    };
+  }
+  // The battle in progress, kept small: in-play battlegroups as [id, ship, count, name] and the damage taken so far.
+  function liveBlock() {
+    if (!battleInProgress()) return undefined;
+    const b = B();
+    return {
+      bid: battleId(), r: b.round, cr: battleCredits(),
+      opps: (b.opps || []).filter((o) => o.id).map((o) => o.id),
+      bgs: b.bgs.filter((g) => g.status === 'in' && g.count > 0).map((g) => [g.id, g.ship, g.count, g.name || '']),
+      hits: (b.hits || []).filter((h) => h.by),
     };
   }
   function rivalStatus(msg, err) { const el = $('#rival-status'); el.textContent = msg; el.classList.toggle('err', !!err); }
@@ -1398,7 +1644,7 @@
       state.rivals[id] = Object.assign({}, d, { corpId: id, importedAt: new Date().toISOString() });
       names.push((prev ? 'Updated ' : 'Added ') + (d.corp || 'Unnamed corporation'));
     });
-    save(); renderStandings(); renderGames();
+    save(); renderStandings(); renderGames(); checkMostClaims();
     rivalStatus(names.length ? names.join(', ') + '.' : own ? 'That’s your own corporation.' : 'Nothing new in that file.', !names.length);
   }
 
@@ -1550,11 +1796,24 @@
 
     // ship classes bought and lost (from saved game summaries)
     const byClass = {};
-    games.forEach((g) => (g.summary ? g.summary.fleet : []).forEach((f) => {
-      const k = byClass[f.ship] = byClass[f.ship] || { bought: 0, spent: 0, lostCost: 0 };
-      k.bought += f.count; k.spent += f.cost;
-      k.lostCost += f.count ? f.lost * (f.cost / f.count) : 0;   // credits' worth of ships lost
-    }));
+    const sources = battleSources();
+    let tracked = false;
+    games.forEach((g) => {
+      const s = g.summary;
+      if (!s) return;
+      const st = s.bid ? dealtStats(state.corpId, s.bid, s.atk, sources) : null;
+      if (st) tracked = true;
+      s.fleet.forEach((f) => {
+        const k = byClass[f.ship] = byClass[f.ship] || { bought: 0, spent: 0, lost: 0, lostCost: 0, d: Object.assign({}, ZERO_DEALT), dSpent: 0 };
+        k.bought += f.count; k.spent += f.cost; k.lost += f.lost;
+        k.lostCost += f.count ? f.lost * (f.cost / f.count) : 0;   // credits' worth of ships lost
+        if (st) {   // damage is only known for games played with this version or later
+          const d = st[f.id] || ZERO_DEALT;
+          Object.keys(k.d).forEach((x) => { k.d[x] += d[x]; });
+          k.dSpent += f.cost;
+        }
+      });
+    });
     const classes = Object.entries(byClass).sort((a, b) => b[1].bought - a[1].bought);
     const summarized = games.filter((g) => g.summary).length;
 
@@ -1578,8 +1837,11 @@
       <h4>Reputation over the campaign</h4>
       <div class="repline">${per.map((p) => `<span><b>${p.rep}</b><small>G${p.n}</small></span>`).join('<i>›</i>')}</div>
       ${classes.length ? `<h4>Ships requisitioned (${summarized} game${summarized === 1 ? '' : 's'} with summaries)</h4>
-        <table class="ctab"><thead><tr><th>Class</th><th>Ships bought</th><th>Cost</th><th>Lost (credits)</th></tr></thead><tbody>
-        ${classes.map(([n, k]) => `<tr><td>${esc(n)}</td><td>${k.bought}</td><td>${k.spent}</td><td class="${k.lostCost ? 'neg' : ''}">${Math.round(k.lostCost)}</td></tr>`).join('')}</tbody></table>`
+        <table class="ctab unit-tbl ${unitCls()}"><thead><tr><th>Class</th><th>${uHead('Bought', 'Bought')}</th><th>${uHead('Lost', 'Lost')}</th>
+          ${tracked ? '<th>Dealt</th><th>Per 10 cr</th><th>Attacks</th>' : ''}</tr></thead><tbody>
+        ${classes.map(([n, k]) => `<tr><td>${esc(n)}</td><td>${uCell(k.spent, k.bought)}</td><td class="${k.lost ? 'neg' : ''}">${uCell(k.lostCost, k.lost)}</td>
+          ${tracked ? dealtCell(k.d) + `<td>${k.dSpent ? (Math.round((dealtTotal(k.d) / k.dSpent) * 100) / 10) : '–'}</td>` + attacksCell(k.d) : ''}</tr>`).join('')}</tbody></table>
+        ${tracked ? '<p class="hint small">Damage counts games played with damage tracking. Per 10 cr: damage dealt for every 10 credits spent on that class in those games.</p>' : ''}`
         : '<p class="hint small">Finish games from the Battle tab to see which ships you requisition and lose.</p>'}`;
   }
 
@@ -1748,7 +2010,7 @@
   // data as a share file. Players who join the same code see each other as rivals.
   const syncReady = () => typeof SYNC_CONFIG !== 'undefined' && !!(SYNC_CONFIG.apiKey && SYNC_CONFIG.projectId);
   const joined = () => syncReady() && !!(state.sync && state.sync.code);
-  let idToken = null, idTokenExp = 0, syncing = false, lastPushed = '', pushTimer = null;
+  let idToken = null, idTokenExp = 0, syncing = false, lastPushed = '', pushTimer = null, lastPullAt = 0;
 
   async function authToken() {
     state.sync = state.sync || {};
@@ -1809,6 +2071,7 @@
   }
   async function syncPull() {
     if (!joined()) return;
+    lastPullAt = Date.now();
     const j = await api('GET', 'campaigns/' + encodeURIComponent(state.sync.code) + '/corps?pageSize=100');
     const online = {};
     ((j && j.documents) || []).forEach((d) => {
@@ -1832,8 +2095,10 @@
     syncing = true;
     if (!quiet) setOnlineMsg('Syncing…');
     try {
-      await syncPush(true);
+      await syncPush(!quiet);   // automatic syncs only write when something changed
       await syncPull();
+      linkOppBattles();
+      checkMostClaims();
       state.sync.lastSync = new Date().toISOString();
       state.sync.error = '';
     } catch (err) {
@@ -1847,7 +2112,13 @@
   function schedulePush() {
     if (!joined()) return;
     clearTimeout(pushTimer);
-    pushTimer = setTimeout(() => { syncPush(false).catch(() => {}); }, 4000);
+    // During a battle taps come in bursts: wait for a quiet spell so a burst is one write.
+    pushTimer = setTimeout(flushPush, battleInProgress() ? 15000 : 4000);
+  }
+  function flushPush() {
+    if (!pushTimer) return;
+    clearTimeout(pushTimer); pushTimer = null;
+    syncPush(false).catch(() => {});
   }
 
   function newCampaignCode() {
@@ -1921,8 +2192,23 @@
     if (!/^ABS-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) { setOnlineMsg('That doesn’t look like a campaign code (ABS-XXXX-XXXX).'); return; }
     await joinCampaign(code);
   });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(true); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') syncNow(true);
+    else { flushPush(); flushBackup(); }    // send what's waiting before the phone sleeps the app
+  });
   window.addEventListener('online', () => syncNow(true));
+  // Opponents' live battles: fetched when needed (Battle tab, damage popup), never polled.
+  function liveWanted() { return joined() && (B().opps || []).some((o) => o.id && (state.rivals[o.id] || {}).online); }
+  function refreshLive(maxAge) {
+    if (!liveWanted() || Date.now() - lastPullAt < maxAge) return Promise.resolve();
+    return syncNow(true);
+  }
+  // Note each opponent's battle id while they're live, so the logged games can be matched up later.
+  function linkOppBattles() {
+    const b = B();
+    b.oppBids = b.oppBids || {};
+    liveOpps().forEach((o) => { b.oppBids[o.id] = o.live.bid; });
+  }
   setInterval(() => { if (document.visibilityState === 'visible' && prefs.tab === 'overview') syncNow(true); }, 60000);
 
   // ---------- Google sign-in (optional) and cloud backup ----------
@@ -2079,16 +2365,28 @@
     delete copy.sync;                    // sign-in tokens stay on the device
     return copy;
   }
-  async function backupNow() {
+  // What a backup is compared on: online rivals and sync timestamps come back by themselves, so they don't count as changes.
+  function backupKey(copy) {
+    const k = Object.assign({}, copy, { rivals: {} });
+    Object.values(copy.rivals || {}).forEach((r) => { if (!r.online) k.rivals[r.corpId] = r; });
+    if (k.team) k.team = Object.assign({}, k.team, { lastSync: '', updateTime: '', error: '' });
+    return JSON.stringify(k);
+  }
+  let lastBackupKey = '';
+  async function backupNow(force) {
     if (!signedIn()) return;
+    const copy = backupState();
+    const key = backupKey(copy);
+    if (!force && key === lastBackupKey) return;
     await authToken();
     const at = new Date().toISOString();
     await api('PATCH', backupPath(), { fields: {
-      data: { stringValue: JSON.stringify(backupState()) },
+      data: { stringValue: JSON.stringify(copy) },
       updatedAt: { timestampValue: at },
       app: { stringValue: APP_VERSION },
     } });
     state.sync.lastBackup = at; state.sync.backupError = '';
+    lastBackupKey = key;
     store(STORE_KEY, state);
   }
   async function fetchBackup() {
@@ -2107,9 +2405,12 @@
   function scheduleBackup() {
     if (!signedIn()) return;
     clearTimeout(backupTimer);
-    backupTimer = setTimeout(() => {
-      backupNow().then(renderAccount).catch(() => { state.sync.backupError = 'Backup will retry when you’re online.'; renderAccount(); });
-    }, 8000);
+    backupTimer = setTimeout(flushBackup, battleInProgress() ? 120000 : 8000);
+  }
+  function flushBackup() {
+    if (!backupTimer) return;
+    clearTimeout(backupTimer); backupTimer = null;
+    backupNow().then(renderAccount).catch(() => { state.sync.backupError = 'Backup will retry when you’re online.'; renderAccount(); });
   }
 
   function setAccountMsg(t) { const el = $('#account-msg'); if (el) el.textContent = t; }
@@ -2142,7 +2443,7 @@
     if (!t) return;
     if (t.id === 'btn-backup-now') {
       setAccountMsg('Backing up…');
-      try { await backupNow(); renderAccount(); setAccountMsg('Backed up.'); } catch (err) { setAccountMsg(syncError(err)); }
+      try { await backupNow(true); renderAccount(); setAccountMsg('Backed up.'); } catch (err) { setAccountMsg(syncError(err)); }
     } else if (t.id === 'btn-backup-restore') {
       try {
         const cloud = await fetchBackup();
@@ -2170,7 +2471,7 @@
   // ("base") so a sync can merge both sides' changes instead of one phone overwriting the other.
   const TEAM_FIELDS = ['corp', 'ceo', 'startDate', 'campScale', 'scaleRule', 'negRepRule', 'unlocked', 'games', 'purchases', 'summary', 'notes', 'houseRulesAdded'];
   const inTeam = () => syncReady() && !!(state.team && state.team.code);
-  let teamTimer = null, teamSyncing = false;
+  let teamTimer = null, teamSyncing = false, lastTeamKey = '';
 
   function sharedOf(st) {
     const out = {};
@@ -2300,6 +2601,7 @@
         }
       }
       state.team.lastSync = new Date().toISOString(); state.team.error = '';
+      lastTeamKey = JSON.stringify(sharedOf(state));
     } catch (err) {
       state.team.error = err.message === 'not-member' ? 'You’re no longer on this team.' : syncError(err);
     }
@@ -2309,6 +2611,7 @@
   }
   function scheduleTeamSync() {
     if (!inTeam()) return;
+    if (lastTeamKey && JSON.stringify(sharedOf(state)) === lastTeamKey) return;   // e.g. only the battle changed
     clearTimeout(teamTimer);
     teamTimer = setTimeout(teamSync, 3000);
   }
@@ -2449,7 +2752,8 @@
     catch (err) { setTeamMsg(err.message === 'no-team' ? 'Nothing found with that code (or it already has 8 devices).' : syncError(err)); }
   });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') teamSync(); });
-  setInterval(() => { if (document.visibilityState === 'visible') teamSync(); }, 45000);
+  // Teammates' changes rarely matter mid-battle, so the Battle tab doesn't poll for them.
+  setInterval(() => { if (document.visibilityState === 'visible' && prefs.tab !== 'battle') teamSync(); }, 45000);
 
   // ---------- iPhone/iPad: Safari and the Home Screen app keep separate data ----------
   (function installNote() {
@@ -2467,6 +2771,7 @@
   $('#b-dmg-rules').textContent = DAMAGE_RULES;
   function renderAll() { renderBound(); renderRuleNote(); renderUnlocks(); renderGames(); renderShips(); renderBattle(); renderStatus(); }
   renderAll();
+  checkMostClaims();
   renderOnline();
   renderAccount();
   renderTeam();

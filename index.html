@@ -357,6 +357,31 @@
     <button type="button" class="btn primary" id="summary-log">Log this game →</button></div>
 </dialog>
 
+<dialog id="hit-dialog">
+  <h3 id="hit-title">Damage</h3>
+  <div class="opp-chips" id="hit-opps"></div>
+  <div class="src-list" id="hit-src"></div>
+  <div class="amt-row"><span>Damage</span>
+    <div class="stepper sm"><button type="button" data-hn="-1" aria-label="Less damage">−</button><b id="hit-n">1</b><button type="button" data-hn="1" aria-label="More damage">+</button></div></div>
+  <p class="hint small" id="hit-fresh"></p>
+  <div class="dlg-actions"><span class="spacer"></span>
+    <button type="button" class="btn" id="hit-cancel">Cancel</button>
+    <button type="button" class="btn primary" id="hit-apply">Apply</button>
+  </div>
+</dialog>
+
+<dialog id="atk-dialog">
+  <h3 id="atk-title">Attack</h3>
+  <p class="hint small">Hits on opponents’ battlegroups are recorded by them when they take the damage.</p>
+  <div class="src-list" id="atk-src"></div>
+  <div class="amt-row" id="atk-amt" hidden><span>Damage</span>
+    <div class="stepper sm"><button type="button" data-an="-1" aria-label="Less damage">−</button><b id="atk-n">1</b><button type="button" data-an="1" aria-label="More damage">+</button></div></div>
+  <div class="dlg-actions"><span class="spacer"></span>
+    <button type="button" class="btn" id="atk-cancel">Cancel</button>
+    <button type="button" class="btn primary" id="atk-apply">Log</button>
+  </div>
+</dialog>
+
 <dialog id="round-dialog">
   <h3>Start the next round?</h3>
   <p>These battlegroups haven’t been marked as activated this round:</p>
