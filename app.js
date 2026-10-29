@@ -12,10 +12,11 @@
       corp: '', ceo: '', startDate: '',
       campScale: '', totalRep: '',
       unlocked: {},            // id -> true (ship_* and adv_*)
-      games: [],               // {scale,date,opp,win,credits,rep,boughtRep,notes,photos,summary,contracts}
+      games: [],               // {scale,date,opp,oppIds,most,result,credits,rep,boughtRep,notes,photos,summary,contracts}
       summary: { finalScale: '', finalRep: '', finalCapital: '', winner: '' },
       notes: DEFAULT_HOUSE_RULES,
       scaleRule: '',           // '' keep scale; 'N' raise by 1 every N games at the current scale
+      negRepRule: false,       // house rule: lose 1 rep per full 20 credits negative at the end of a game
       purchases: [],           // {id, cost, afterGame, date}: unlocks bought, for the capital history
       rivals: {},              // corpId -> shared corporation file from another player
       battle: blankBattle(),
@@ -33,6 +34,7 @@
       nonCampaign: false,      // one-off game: all ship classes, no campaign advantages, not logged
       contracts: [],           // contract ids, e.g. 'J♠'
       advUsed: {},             // once-per-game/round advantages used, e.g. { adv_31: true }
+      opps: [],                // opponents in this game: {id: rival corpId} or {name} for someone not in the app
     };
   }
 
@@ -84,6 +86,21 @@
     return changed;
   }
   if (addIds(state)) store(STORE_KEY, state);
+  // Results used to be Win/Loss/Draw. What counts is who had the most credits (ties count for everyone),
+  // so Win and Draw become "most credits"; profit or deficit comes from the credits themselves.
+  function migrateResults(games) {
+    let changed = false;
+    (games || []).forEach((g) => {
+      if (!('win' in g)) return;
+      const w = g.win;
+      if (w === 'Win' || w === 'Draw') g.most = true;
+      else if (w && w !== 'Loss') g.notes = (g.notes ? g.notes.replace(/\s+$/, '') + '\n' : '') + 'Result: ' + w;
+      delete g.win;
+      changed = true;
+    });
+    return changed;
+  }
+  if (migrateResults(state.games)) store(STORE_KEY, state);
   function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   const prefs = load(PREFS_KEY, { tab: 'overview', shipFilter: 'mine' });
   prefs.tab = { campaign: 'overview', games: 'log', ships: 'stats', more: 'overview' }[prefs.tab] || prefs.tab;   // renamed tabs
@@ -102,6 +119,19 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const num = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+  const hasCredits = (g) => g.credits !== '' && g.credits != null && !isNaN(parseFloat(g.credits));
+  // 'profit' | 'even' | 'deficit' | '': from the final credits, or the chosen result when credits weren't tracked.
+  // 0 credits is not a profit.
+  function gameResult(g) {
+    if (hasCredits(g)) { const c = num(g.credits); return c > 0 ? 'profit' : c < 0 ? 'deficit' : 'even'; }
+    return g.result || '';
+  }
+  const RESULT_LABEL = { profit: 'Profit', even: 'Break even', deficit: 'Deficit' };
+  // Rivals on older versions still send Win/Loss/Draw.
+  const gameMost = (g) => g.most != null ? !!g.most : g.win === 'Win' || g.win === 'Draw';
+  // House rule: −1 rep per full 20 credits negative (0 to −19 costs nothing).
+  const negRepPenalty = (credits) => (credits < 0 ? Math.floor(-credits / 20) : 0);
+  const signedRep = (v) => (num(v) > 0 ? '+' : num(v) < 0 ? '−' : '') + Math.abs(num(v));
 
   const ALL_ADVS = ADVANTAGES.flatMap((t) => t.items.map(([id, lvl, name, desc]) => ({ id, lvl, name, desc, tree: t.tree })));
 
@@ -150,15 +180,16 @@
   function renderBound() {
     $$('[data-bind]').forEach((el) => {
       const v = getPath(state, el.dataset.bind);
-      el.value = v == null ? '' : v;
+      if (el.type === 'checkbox') el.checked = !!v; else el.value = v == null ? '' : v;
     });
   }
   document.addEventListener('input', (e) => {
     const el = e.target;
     if (!el.dataset || !el.dataset.bind) return;
-    setPath(state, el.dataset.bind, el.value);
+    setPath(state, el.dataset.bind, el.type === 'checkbox' ? el.checked : el.value);
     save();
     if (el.dataset.bind === 'corp') renderStatus();
+    if (el.dataset.bind === 'negRepRule') renderRuleNote();
     if (el.dataset.bind === 'campScale') renderBattle();
   });
 
@@ -292,6 +323,14 @@
       rivals.map((r) => `<option value="${esc(r.corpId)}">${esc(r.corp || 'Unnamed corporation')}${r.teamNames && r.teamNames.length > 1 ? ' (' + r.teamNames.map(esc).join(' & ') + ')' : r.ceo ? ' (' + esc(r.ceo) + ')' : ''}</option>`).join('');
     sel.value = prefs.logView || 'mine';
   }
+  // Badge on a game card: most credits, plus profit/deficit when there are no credits to show it.
+  function resBadge(g) {
+    const most = gameMost(g), r = gameResult(g);
+    const parts = [];
+    if (most) parts.push('<span class="res most">Most credits</span>');
+    if (!hasCredits(g) && r) parts.push(`<span class="res ${r}">${RESULT_LABEL[r]}</span>`);
+    return parts.length ? `<span class="res-wrap">${parts.join('')}</span>` : '<span></span>';
+  }
   function renderRivalGames(r) {
     const games = r.games || [];
     const when = r.sharedAt ? new Date(r.sharedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown';
@@ -301,13 +340,13 @@
         const bits = [];
         if (g.scale !== '' && g.scale != null) bits.push('Scale ' + esc(g.scale));
         if (g.credits) bits.push(esc(g.credits) + ' credits');
-        if (g.rep) bits.push('+' + esc(g.rep) + ' rep');
+        if (g.rep) bits.push(esc(signedRep(g.rep)) + ' rep');
         if (g.boughtRep) bits.push('bought rep (−10)');
         if (g.date) bits.push(esc(g.date));
         return `<div class="game rival-game">
           <span class="num">${i + 1}</span>
           <span class="opp">${g.opp ? 'vs ' + esc(g.opp) : 'Game ' + (i + 1)}</span>
-          ${g.win ? `<span class="res ${esc(g.win)}">${esc(g.win)}</span>` : '<span></span>'}
+          ${resBadge(g)}
           <span class="meta">${bits.join(' · ')}</span>
           ${g.summary ? `<button type="button" class="sumbtn" data-sum="r${i}" aria-expanded="false">Game summary ${CHEVRON}</button>
             <div class="sum-wrap" hidden>${summaryHtml(g.summary)}</div>` : '<span class="nosum">No summary shared for this game</span>'}
@@ -340,14 +379,14 @@
       const bits = [];
       if (g.scale !== '' && g.scale != null) bits.push('Scale ' + esc(g.scale));
       if (g.credits) bits.push(esc(g.credits) + ' credits');
-      if (g.rep) bits.push('+' + esc(g.rep) + ' rep');
+      if (g.rep) bits.push(esc(signedRep(g.rep)) + ' rep');
       if (g.boughtRep) bits.push('bought rep (−10)');
       if (g.date) bits.push(esc(g.date));
       const extra = g.notes || '';
       return `<div class="game" data-game="${i}" role="button" tabindex="0">
         <span class="num">${i + 1}</span>
         <span class="opp">${g.opp ? 'vs ' + esc(g.opp) : '<span style="color:var(--muted)">Game ' + (i + 1) + '</span>'}</span>
-        ${g.win ? `<span class="res ${esc(g.win)}">${esc(g.win)}</span>` : '<span></span>'}
+        ${resBadge(g)}
         <span class="meta">${bits.join(' · ') || 'Tap to edit'}</span>
         ${extra ? `<div class="extra">${esc(extra)}</div>` : ''}
         ${(g.photos || []).length ? `<div class="game-thumbs">${g.photos.map((id) => `<span class="thumb"><img data-photo="${id}" alt="Photo from game ${i + 1}"></span>`).join('')}</div>` : ''}
@@ -365,6 +404,7 @@
   let fromBattle = false;    // saving this dialog finishes the current Battle
   let pendingSummary = null; // post-game summary to store with the logged game
   let repTouched = false;    // stop auto-suggesting rep once the player edits it
+  let pendingOpps = null;    // rival corpIds of the opponents, when the game comes from the Battle tab
 
   function openGame(i, prefill) {
     editing = i;
@@ -379,7 +419,8 @@
       if (el.type === 'checkbox') el.checked = !!g[el.name];
       else el.value = g[el.name] == null ? '' : g[el.name];
     });
-    if (i < 0) suggestRep();
+    pendingOpps = i >= 0 ? null : (prefill && prefill.oppIds) || null;
+    suggestRep();
     dialogPhotos = (g.photos || []).slice();
     renderDialogPhotos();
     renderDialogBuys(i);
@@ -430,6 +471,7 @@
       if (!el.name) return;
       g[el.name] = el.type === 'checkbox' ? el.checked : el.value.trim();
     });
+    if (hasCredits(g)) g.result = '';
     g.photos = dialogPhotos.slice();
     dialogPhotos = [];
     if (editing >= 0) {
@@ -437,9 +479,11 @@
       g.id = old.id || 'g' + newId(); g.at = old.at || new Date().toISOString();
       if (old.summary) g.summary = old.summary;
       if (old.contracts) g.contracts = old.contracts;
+      if (old.oppIds) g.oppIds = old.oppIds;
       state.games[editing] = g;
     } else {
       if (fromBattle && pendingSummary) { g.summary = pendingSummary; g.contracts = pendingSummary.contracts; }
+      if (pendingOpps && pendingOpps.length) g.oppIds = pendingOpps.slice();
       g.id = 'g' + newId(); g.at = new Date().toISOString();
       state.games.push(g);
       applyScaleRule();
@@ -480,14 +524,19 @@
     if (atScale >= n) { state.campScale = String(cur + 1); renderBound(); }
   }
 
+  // Rep: most credits +1, profit +1, and (house rule) −1 per full 20 credits negative.
   function suggestRep() {
+    const els = form.elements;
+    const g = { credits: els.credits.value.trim(), result: els.result.value };
+    $('#g-result-wrap').hidden = hasCredits(g);
+    $('#g-rep-hint').textContent = '(most credits +1, profit +1' + (state.negRepRule ? ', −1 per 20 negative' : '') + ')';
     if (repTouched) return;
-    const won = form.elements.win.value === 'Win';
-    const profit = num(form.elements.credits.value) > 0;
-    form.elements.rep.value = (won ? 1 : 0) + (profit ? 1 : 0);
+    const pen = state.negRepRule && hasCredits(g) ? negRepPenalty(num(g.credits)) : 0;
+    els.rep.value = (els.most.checked ? 1 : 0) + (gameResult(g) === 'profit' ? 1 : 0) - pen;
   }
   form.elements.rep.addEventListener('input', () => { repTouched = true; });
-  form.elements.win.addEventListener('change', suggestRep);
+  form.elements.most.addEventListener('change', suggestRep);
+  form.elements.result.addEventListener('change', suggestRep);
   form.elements.credits.addEventListener('input', suggestRep);
 
   // ---------- ship cards ----------
@@ -686,6 +735,29 @@
   }
 
   const ceos = () => B().ceos || 2;
+
+  // Opponents in this game: rivals from the app, or a typed name for someone who doesn't use it.
+  function oppName(o) {
+    const r = o.id && (state.rivals || {})[o.id];
+    return r ? r.corp || r.ceo || 'Unnamed corporation' : o.name || 'Rival';
+  }
+  function renderOpps() {
+    const b = B();
+    const opps = b.opps || [];
+    const rivals = Object.values(state.rivals || {});
+    const on = new Set(opps.filter((o) => o.id).map((o) => o.id));
+    $('#b-opps-note').textContent = opps.length ? '' : rivals.length ? '(tap who you’re playing)' : '(add rivals on the Overview, or type a name)';
+    $('#b-opps').innerHTML = rivals.map((r) => `<button type="button" class="opp-chip ${on.has(r.corpId) ? 'on' : ''}" data-opp="${esc(r.corpId)}" aria-pressed="${on.has(r.corpId)}">
+        ${esc(r.corp || 'Unnamed corporation')}${r.ceo ? `<small>${esc(r.ceo)}</small>` : ''}</button>`).join('') +
+      opps.map((o, i) => (o.id ? '' : `<button type="button" class="opp-chip on guest" data-oppguest="${i}" aria-label="Remove ${esc(o.name)}">${esc(o.name)} <span aria-hidden="true">×</span></button>`)).join('') +
+      '<button type="button" class="opp-chip add" data-oppadd="1">+ Name</button>';
+  }
+  // Revenue is card × CEOs, so picking opponents also sets the CEO count (still adjustable).
+  function setOpps(opps) {
+    const b = B();
+    b.opps = opps;
+    b.ceos = Math.min(8, Math.max(2, 1 + opps.length));
+  }
   function ctState(id) {
     const b = B();
     b.ct = b.ct || {};
@@ -752,6 +824,7 @@
     $('#b-scale').textContent = battleScale();
     $('#b-noncamp').checked = !!b.nonCampaign;
     $('#btn-finish').textContent = b.nonCampaign ? 'End game' : 'Finish game → Log';
+    renderOpps();
 
     // helm
     const total = cmdTokens();
@@ -935,6 +1008,16 @@
       const id = t.dataset.ctex, cur = ctState(id);
       cur.ex = !cur.ex;
       b.ct[id] = cur;
+    } else if (t.dataset.opp) {
+      const id = t.dataset.opp, opps = b.opps || [];
+      const r = (state.rivals || {})[id];
+      setOpps(opps.some((o) => o.id === id) ? opps.filter((o) => o.id !== id) : opps.concat({ id, name: r ? r.corp || r.ceo : '' }));
+    } else if (t.dataset.oppguest) {
+      setOpps((b.opps || []).filter((o, i) => i !== +t.dataset.oppguest));
+    } else if (t.dataset.oppadd) {
+      const name = (prompt('Opponent’s name') || '').trim();
+      if (!name) return;
+      setOpps((b.opps || []).concat({ name }));
     } else if (t.dataset.ceos) {
       b.ceos = Math.min(8, Math.max(2, ceos() + num(t.dataset.d)));
     } else if (t.dataset.use) {
@@ -1103,7 +1186,9 @@
   $('#summary-log').addEventListener('click', () => {
     const s = pendingSummary;
     $('#summary-dialog').close();
-    openGame(-1, { scale: s.scale, credits: String(s.credits), notes: s.rounds + ' rounds.' });
+    const opps = B().opps || [];
+    openGame(-1, { scale: s.scale, credits: String(s.credits), notes: s.rounds + ' rounds.',
+      opp: opps.map(oppName).join(', '), oppIds: opps.filter((o) => o.id).map((o) => o.id) });
   });
 
   // Snapshot of the finished battle, stored with the logged game.
@@ -1184,6 +1269,7 @@
     state = Object.assign(blankState(), next);
     movePurchaseText(state.games);
     addIds(state);
+    migrateResults(state.games);
     addHouseRules(state);
     state.unlocked = state.unlocked || {};
     state.games = Array.isArray(state.games) ? state.games : [];
@@ -1267,7 +1353,8 @@
       type: SHARE_TYPE, version: 1, sharedAt: new Date().toISOString(), app: APP_VERSION,
       corpId: state.corpId, corp: state.corp, ceo: state.ceo, rep: reputation(), campScale: state.campScale,
       capital: { total: c.total, avail: c.avail }, unlocked: Object.keys(state.unlocked),
-      games: state.games.map((g) => ({ id: g.id, scale: g.scale, opp: g.opp, win: g.win, credits: g.credits, rep: g.rep, boughtRep: !!g.boughtRep, date: g.date, summary: g.summary || null })),
+      negRepRule: !!state.negRepRule,
+      games: state.games.map((g) => ({ id: g.id, scale: g.scale, opp: g.opp, oppIds: g.oppIds, most: !!g.most, result: g.result || '', credits: g.credits, rep: g.rep, boughtRep: !!g.boughtRep, date: g.date, summary: g.summary || null })),
       purchases: state.purchases || [],
       teamNames: state.team && state.team.code ? uniqueNames(state.team.names) : undefined,
     };
@@ -1315,8 +1402,19 @@
     rivalStatus(names.length ? names.join(', ') + '.' : own ? 'That’s your own corporation.' : 'Nothing new in that file.', !names.length);
   }
 
+  // The house rule is a per-corporation setting; point out when rivals in the campaign play it differently.
+  function renderRuleNote() {
+    const mine = !!state.negRepRule;
+    const diff = Object.values(state.rivals || {}).filter((r) => r.negRepRule != null && !!r.negRepRule !== mine);
+    const note = $('#negrep-note');
+    note.hidden = !diff.length;
+    note.textContent = diff.length ? diff.map((r) => r.corp || 'A rival').join(', ') + (diff.length > 1 ? ' have' : ' has') +
+      ' this house rule ' + (mine ? 'off' : 'on') + '. ' + (mine ? 'Untick' : 'Tick') + ' it to match.' : '';
+  }
+
   const rivalOpen = new Set();
   function renderStandings() {
+    renderRuleNote();
     const c = capital();
     const me = { corpId: state.corpId, corp: state.corp, ceo: state.ceo, rep: reputation(), games: state.games, capital: { total: c.total }, me: true };
     const rivals = Object.values(state.rivals || {});
@@ -1328,12 +1426,12 @@
       const ships = r.me ? [] : SHIPS.filter((s) => s.always || (r.unlocked || []).includes(s.id)).map((s) => s.name);
       const advs = r.me ? [] : ALL_ADVS.filter((a) => (r.unlocked || []).includes(a.id)).map((a) => 'L' + a.lvl + ' ' + a.name);
       const games = (r.games || []);
-      const wins = games.filter((g) => g.win === 'Win').length;
+      const most = games.filter(gameMost).length;
       return `<div class="item-wrap standing ${r.me ? 'me' : ''} ${open ? 'open' : ''}">
         <div class="item">
           <span class="rank-n">${i + 1}</span>
           <span class="name">${esc(r.corp || 'Unnamed corporation')}${r.me ? ' <span class="badge own">YOU</span>' : r.online ? ' <span class="badge online">ONLINE</span>' : ''}
-            <small>${r.teamNames && r.teamNames.length > 1 ? 'Team: ' + r.teamNames.map(esc).join(' & ') + ' · ' : r.ceo ? esc(r.ceo) + ' · ' : ''}${games.length} game${games.length === 1 ? '' : 's'} · ${wins} win${wins === 1 ? '' : 's'} · ${r.capital ? r.capital.total : 0} capital earned</small></span>
+            <small>${r.teamNames && r.teamNames.length > 1 ? 'Team: ' + r.teamNames.map(esc).join(' & ') + ' · ' : r.ceo ? esc(r.ceo) + ' · ' : ''}${games.length} game${games.length === 1 ? '' : 's'} · most credits in ${most} · ${r.capital ? r.capital.total : 0} capital earned</small></span>
           <span class="rep-n">${r.rep || 0}<small>rep</small></span>
           ${r.me ? '<span class="chev-spacer"></span>' : `<button type="button" class="chevbtn" data-rival="${esc(r.corpId)}" aria-expanded="${open}" aria-label="Details for ${esc(r.corp || 'rival')}">${CHEVRON}</button>`}
         </div>
@@ -1341,7 +1439,7 @@
           <p class="hint small">${r.online ? 'From the online campaign · updated ' + esc((r.sharedAt || '').slice(0, 10)) : 'Shared ' + esc((r.sharedAt || '').slice(0, 10)) + '. Ask them to share again for the latest.'}</p>
           <p><b>Ship classes:</b> ${ships.map(esc).join(', ')}</p>
           <p><b>Advantages:</b> ${advs.length ? advs.map(esc).join(', ') : 'none'}</p>
-          ${games.length ? `<p><b>Recent games:</b> ${games.slice(-3).reverse().map((g) => [g.opp ? 'vs ' + g.opp : '', g.win, g.credits !== '' && g.credits != null ? g.credits + ' cr' : ''].filter(Boolean).map(esc).join(' ')).join(' · ')}</p>` : ''}
+          ${games.length ? `<p><b>Recent games:</b> ${games.slice(-3).reverse().map((g) => [g.opp ? 'vs ' + g.opp : '', gameMost(g) ? 'most credits' : '', hasCredits(g) ? g.credits + ' cr' : RESULT_LABEL[gameResult(g)]].filter(Boolean).map(esc).join(' ')).join(' · ')}</p>` : ''}
           <div class="btns two"><button type="button" class="btn" data-rival-fleet="${esc(r.corpId)}">View their fleet stats</button>
             ${(r.games || []).length ? `<button type="button" class="btn" data-rival-games="${esc(r.corpId)}">View their games</button>` : ''}
             ${r.online ? '' : `<button type="button" class="btn danger" data-rival-del="${esc(r.corpId)}">Remove</button>`}</div>
@@ -1435,11 +1533,12 @@
     $('#stats-wrap-ov').hidden = !games.length;
     const box = { set innerHTML(h) { boxes.forEach((b) => { b.innerHTML = h; }); } };
     if (!games.length) { box.innerHTML = ''; return; }
-    const res = (w) => games.filter((g) => g.win === w).length;
-    const wins = res('Win'), losses = res('Loss'), draws = res('Draw');
-    const withCredits = games.filter((g) => g.credits !== '' && g.credits != null && !isNaN(parseFloat(g.credits)));
+    const most = games.filter(gameMost).length;
+    const withResult = games.filter((g) => gameResult(g));
+    const deficits = withResult.filter((g) => gameResult(g) === 'deficit').length;
+    const withCredits = games.filter(hasCredits);
     const avgCr = withCredits.length ? withCredits.reduce((t, g) => t + num(g.credits), 0) / withCredits.length : null;
-    const profits = withCredits.filter((g) => num(g.credits) > 0).length;
+    const profits = withResult.filter((g) => gameResult(g) === 'profit').length;
     const c = capital();
     const unlockSpend = c.spent - games.filter((g) => g.boughtRep).length * REP_PURCHASE_COST;
     const repSpend = games.filter((g) => g.boughtRep).length * REP_PURCHASE_COST;
@@ -1462,12 +1561,12 @@
     box.innerHTML = `
       <div class="sum-tiles stats4">
         <div><b>${games.length}</b><span>Games</span></div>
-        <div><b>${wins}–${losses}${draws ? '–' + draws : ''}</b><span>W–L${draws ? '–D' : ''}</span></div>
-        <div><b>${Math.round((wins / games.length) * 100)}%</b><span>Win rate</span></div>
+        <div><b>${most}/${games.length}</b><span>Most credits</span></div>
+        <div><b>${profits}/${withResult.length}</b><span>In profit</span></div>
         <div><b>${avgCr == null ? '–' : signed(Math.round(avgCr * 10) / 10)}</b><span>Avg credits</span></div>
       </div>
       <div class="sum-tiles stats4">
-        <div><b>${profits}/${withCredits.length}</b><span>In profit</span></div>
+        <div><b class="${deficits ? 'neg' : ''}">${deficits}/${withResult.length}</b><span>In deficit</span></div>
         <div><b>${reputation()}</b><span>Reputation</span></div>
         <div><b>${c.total}</b><span>Capital earned</span></div>
         <div><b>${unlockSpend}${repSpend ? '+' + repSpend : ''}</b><span>Spent${repSpend ? ' (+rep)' : ''}</span></div>
@@ -1632,8 +1731,8 @@
       ${groups.length ? `<table class="p-table"><thead><tr><th>When</th><th>Bought</th><th>Capital</th></tr></thead><tbody>
         ${groups.map((g) => `<tr><td>${g.n === 0 ? 'Before game 1' : 'After game ' + g.n}</td><td>${g.items.map((id) => esc(name(id))).join(', ')}</td><td>−${g.items.reduce((t, id) => t + unlockCost(id), 0)}</td></tr>`).join('')}</tbody></table>` : '<p>No purchases yet.</p>'}
       <h2>Game log</h2>
-      ${state.games.length ? `<table class="p-table"><thead><tr><th>#</th><th>Date</th><th>Opponent(s)</th><th>Scale</th><th>Result</th><th>Credits</th><th>Rep</th><th>Bought rep</th></tr></thead><tbody>
-        ${state.games.map((g, i) => `<tr><td>${i + 1}</td><td>${esc(g.date || '')}</td><td>${esc(g.opp || '')}</td><td>${esc(g.scale || '')}</td><td>${esc(g.win || '')}</td><td>${esc(g.credits || '')}</td><td>${esc(g.rep || '')}</td><td>${g.boughtRep ? 'Yes (−10)' : ''}</td></tr>`).join('')}</tbody></table>` : '<p>No games yet.</p>'}
+      ${state.games.length ? `<table class="p-table"><thead><tr><th>#</th><th>Date</th><th>Opponent(s)</th><th>Scale</th><th>Most credits</th><th>Credits</th><th>Rep</th><th>Bought rep</th></tr></thead><tbody>
+        ${state.games.map((g, i) => `<tr><td>${i + 1}</td><td>${esc(g.date || '')}</td><td>${esc(g.opp || '')}</td><td>${esc(g.scale || '')}</td><td>${gameMost(g) ? 'Yes' : ''}</td><td>${hasCredits(g) ? esc(g.credits) : esc(RESULT_LABEL[gameResult(g)] || '')}</td><td>${esc(g.rep || '')}</td><td>${g.boughtRep ? 'Yes (−10)' : ''}</td></tr>`).join('')}</tbody></table>` : '<p>No games yet.</p>'}
       ${rivals.length ? `<h2>Standings</h2><table class="p-table"><thead><tr><th>Corporation</th><th>CEO</th><th>Reputation</th><th>Games</th><th>Shared</th></tr></thead><tbody>
         <tr><td><b>${esc(state.corp || 'Unnamed')}</b> (you)</td><td>${esc(state.ceo || '')}</td><td>${reputation()}</td><td>${state.games.length}</td><td>${today}</td></tr>
         ${rivals.map((r) => `<tr><td>${esc(r.corp || 'Unnamed')}</td><td>${esc(r.ceo || '')}</td><td>${r.rep || 0}</td><td>${(r.games || []).length}</td><td>${esc((r.sharedAt || '').slice(0, 10))}</td></tr>`).join('')}</tbody></table>` : ''}
@@ -2069,7 +2168,7 @@
   // ---------- team corporations (shared between teammates' phones) ----------
   // The shared part of the campaign lives in teams/{code}. Each phone keeps the last synced copy
   // ("base") so a sync can merge both sides' changes instead of one phone overwriting the other.
-  const TEAM_FIELDS = ['corp', 'ceo', 'startDate', 'campScale', 'scaleRule', 'unlocked', 'games', 'purchases', 'summary', 'notes', 'houseRulesAdded'];
+  const TEAM_FIELDS = ['corp', 'ceo', 'startDate', 'campScale', 'scaleRule', 'negRepRule', 'unlocked', 'games', 'purchases', 'summary', 'notes', 'houseRulesAdded'];
   const inTeam = () => syncReady() && !!(state.team && state.team.code);
   let teamTimer = null, teamSyncing = false;
 
@@ -2128,6 +2227,7 @@
     const photos = new Map(state.games.map((g) => [g.id, g.photos]));
     TEAM_FIELDS.forEach((f) => { if (merged[f] !== undefined) state[f] = merged[f] === null ? (f === 'unlocked' ? {} : f === 'games' || f === 'purchases' ? [] : '') : merged[f]; });
     state.games = (merged.games || []).map((g) => Object.assign({}, g, photos.get(g.id) ? { photos: photos.get(g.id) } : {}));
+    migrateResults(state.games);
     store(STORE_KEY, state);
     renderAll();
     schedulePush();
@@ -2365,7 +2465,7 @@
 
   // ---------- boot ----------
   $('#b-dmg-rules').textContent = DAMAGE_RULES;
-  function renderAll() { renderBound(); renderUnlocks(); renderGames(); renderShips(); renderBattle(); renderStatus(); }
+  function renderAll() { renderBound(); renderRuleNote(); renderUnlocks(); renderGames(); renderShips(); renderBattle(); renderStatus(); }
   renderAll();
   renderOnline();
   renderAccount();

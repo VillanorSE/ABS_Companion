@@ -60,6 +60,8 @@
             <option value="3">Raise by 1 every 3 games</option>
           </select>
         </label>
+        <label class="switch house-rule"><input type="checkbox" data-bind="negRepRule"> <span>House rule: lose 1 rep per full 20 credits negative <small>(0 to −19: none, −20 to −39: −1, and so on)</small></span></label>
+        <p class="hint small" id="negrep-note" hidden></p>
       </div>
     </div>
 
@@ -151,6 +153,10 @@
       <div class="tile">
         <span class="lab">Game scale</span>
         <div class="stepper"><button type="button" data-bstep="scale" data-d="-1" aria-label="Lower scale">−</button><b id="b-scale">3</b><button type="button" data-bstep="scale" data-d="1" aria-label="Raise scale">+</button></div>
+      </div>
+      <div class="tile span2 opps-tile">
+        <span class="lab">Opponents <small id="b-opps-note"></small></span>
+        <div class="opp-chips" id="b-opps"></div>
       </div>
     </div>
 
@@ -263,13 +269,14 @@
     </div>
     <label class="field"><span>Opponent(s)</span><input type="text" name="opp"></label>
     <div class="row2">
-      <label class="field"><span>Result</span>
-        <select name="win"><option value=""></option><option>Win</option><option>Loss</option><option>Draw</option></select>
-      </label>
       <label class="field"><span>Final credits</span><input type="text" inputmode="numeric" name="credits"></label>
+      <label class="field check"><input type="checkbox" name="most"><span>I had the most credits <small>(ties count)</small></span></label>
     </div>
+    <label class="field" id="g-result-wrap"><span>Result <small>(only if credits weren’t tracked)</small></span>
+      <select name="result"><option value=""></option><option value="profit">Profit</option><option value="even">Break even</option><option value="deficit">Deficit</option></select>
+    </label>
     <div class="row2">
-      <label class="field"><span>Rep. gained <small>(win +1, profit +1)</small></span><input type="text" inputmode="numeric" name="rep"></label>
+      <label class="field"><span>Rep. gained <small id="g-rep-hint">(most credits +1, profit +1)</small></span><input type="text" inputmode="numeric" name="rep"></label>
       <label class="field check"><input type="checkbox" name="boughtRep"><span>Bought rep (−10 capital)</span></label>
     </div>
     <div class="field"><span>Bought after this game</span><div class="dlg-buys" id="dlg-buys"></div></div>

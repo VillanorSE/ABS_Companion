@@ -121,8 +121,10 @@ input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);flex:none
 .game .opp{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .game .meta{font-size:13px;color:var(--muted);grid-column:2 / 4;}
 .game .res{font-size:12px;font-weight:800;border-radius:6px;padding:2px 8px;background:var(--surface2);}
-.game .res.Win{color:#0b1222;background:var(--good);}
-.game .res.Loss{color:#fff;background:#8a2d27;}
+.game .res-wrap{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;}
+.game .res.most{color:#0b1222;background:var(--good);}
+.game .res.profit{color:var(--good);border:1px solid var(--good);background:transparent;}
+.game .res.deficit{color:#fff;background:#8a2d27;}
 .game .extra{grid-column:1 / 4;font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:6px;margin-top:4px;white-space:pre-wrap;}
 .empty{color:var(--muted);text-align:center;padding:30px 10px;}
 
@@ -604,3 +606,14 @@ dialog.tall:not([open]){display:none;}
 .online-on small b{color:var(--text);}
 .leave-online{margin-top:8px;}
 .leave-online:empty{display:none;}
+
+/* opponents on the Battle tab */
+.opp-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;}
+.opp-chip{border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:transparent;color:var(--text);
+  font:inherit;font-size:14px;font-weight:600;cursor:pointer;text-align:left;line-height:1.2;}
+.opp-chip small{display:block;font-size:11px;font-weight:400;color:var(--muted);}
+.opp-chip.on{background:var(--accent);border-color:var(--accent);color:#0b1222;}
+.opp-chip.on small{color:#0b1222;opacity:.75;}
+.opp-chip.add{border-style:dashed;color:var(--muted);}
+.switch.house-rule{margin-top:12px;align-items:flex-start;color:var(--text);}
+.switch.house-rule small{display:block;color:var(--muted);font-size:12px;}
