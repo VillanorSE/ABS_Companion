@@ -391,6 +391,7 @@ button.mod.base{color:var(--accent);}
 
 /* v5: activation, next round, toast */
 .bg-main[data-bgact]{cursor:pointer;}
+.bg-name{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;font-weight:800;border-bottom:1px dashed var(--muted);}
 .act-chip{display:inline-block;margin-top:6px;font-size:12px;font-weight:700;color:var(--muted);border:1px dashed var(--line);border-radius:999px;padding:3px 10px;}
 .bg.acted{opacity:.5;background:var(--bg);}
 .bg.acted .act-chip{border-style:solid;}

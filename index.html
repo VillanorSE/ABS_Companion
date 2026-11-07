@@ -354,6 +354,22 @@
     <button type="button" class="btn primary" id="summary-log">Log this game →</button></div>
 </dialog>
 
+<dialog id="bgedit-dialog">
+  <form method="dialog" id="bgedit-form">
+    <h3 id="bgedit-title">Edit battlegroup</h3>
+    <label class="field"><span>Name</span><input type="text" name="name" placeholder="e.g. Alpha"></label>
+    <label class="field"><span>Ships requisitioned (max 5)</span>
+      <div class="stepper"><button type="button" data-estep="-1" aria-label="Fewer ships">−</button><b id="bgedit-count">1</b><button type="button" data-estep="1" aria-label="More ships">+</button></div>
+    </label>
+    <p class="hint small" id="bgedit-info"></p>
+    <div class="dlg-actions">
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="bgedit-cancel">Cancel</button>
+      <button type="submit" class="btn primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="hit-dialog">
   <h3 id="hit-title">Damage</h3>
   <div class="opp-chips" id="hit-opps"></div>

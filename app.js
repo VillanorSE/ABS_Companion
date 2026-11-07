@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.28.0';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.28.1';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -870,7 +870,8 @@
     const guests = (B().opps || []).some((o) => !o.id);
     const srcs = (opp ? opp.live.bgs.map(([id, ship, count, name]) => ['bg:' + id, bgLabel(id, name, count, ship)]) : [])
       .concat(!opp || guests ? [['opp', 'An opponent <small>not in the app</small>']] : [])
-      .concat([['dud', 'Weapon malfunction <small>own dud while systems critical' + (isCrit(g) ? '' : ' (not critical now)') + '</small>'], ['other', 'Contract or other']]);
+      .concat([['other', 'Contract or other']])
+      .concat(isCrit(g) ? [['dud', 'Weapon malfunction <small>own dud while systems critical</small>']] : []);
     $('#hit-src').innerHTML = (opp ? `<p class="src-h">${esc(oppName({ id: opp.id }))}’s battlegroups in play</p>` : '') +
       srcs.map(([k, label]) => `<button type="button" class="src ${hitCtx.src === k ? 'on' : ''}" data-hsrc="${k}" aria-pressed="${hitCtx.src === k}">${label}</button>`).join('');
     $('#hit-n').value = hitCtx.n;
@@ -1029,7 +1030,7 @@
       return `<div class="bg st-${g.status} ${canAct && g.act ? 'acted' : ''}">
         <div class="bg-top">
           <div class="bg-main" ${canAct ? `data-bgact="${g.id}" role="button" tabindex="0" aria-pressed="${!!g.act}"` : ''}>
-            <b>${esc(g.name || 'BG ' + g.id)}</b> · ${start}× ${esc(s.name)}
+            <button type="button" class="bg-name" data-bgedit="${g.id}" aria-label="Edit battlegroup">${esc(g.name || 'BG ' + g.id)}</button> · ${start}× ${esc(s.name)}
             <small>Round ${g.round} · ${start * s.cost} cr · Ⓜ${s.mass}</small>
             ${canAct ? `<span class="act-chip">${g.act ? '✓ Activated' : 'Tap to mark activated'}</span>` : ''}
           </div>
@@ -1115,7 +1116,9 @@
     const b = B();
     const refill = e.target.closest('[data-refill]');
     const spend = e.target.closest('[data-spend]');
-    const act = e.target.closest('[data-bgact]');
+    const edit = e.target.closest('[data-bgedit]');
+    const act = !edit && e.target.closest('[data-bgact]');
+    if (edit) { openBgEdit(b.bgs.find((x) => x.id === +edit.dataset.bgedit)); return; }
     if (refill) {
       const k = refill.dataset.refill;
       b.spent[k] = Math.max(0, b.spent[k] - 1);
@@ -1306,6 +1309,49 @@
     });
     save(); renderBattle();
 
+  });
+
+  // Edit a battlegroup: rename it or change how many ships were requisitioned (its ledger line follows).
+  const editDlg = $('#bgedit-dialog'), editForm = $('#bgedit-form');
+  let editCtx = null;
+  function renderBgEdit() {
+    const g = B().bgs.find((x) => x.id === editCtx.id), s = shipById(g.ship);
+    const start = g.start || g.count, lost = Math.min(start - g.count, editCtx.n);
+    const diff = (editCtx.n - start) * s.cost;
+    $('#bgedit-count').textContent = editCtx.n;
+    $('#bgedit-info').textContent = editCtx.n + '× ' + s.name + ' · ' + editCtx.n * s.cost + ' cr' +
+      (diff ? ' (' + (diff > 0 ? diff + ' cr more' : -diff + ' cr refunded') + ')' : '') +
+      (lost ? ' · ' + lost + ' lost, ' + (editCtx.n - lost) + ' left' : '');
+  }
+  function openBgEdit(g) {
+    editCtx = { id: g.id, n: g.start || g.count };
+    $('#bgedit-title').textContent = 'Edit ' + (g.name || 'BG ' + g.id);
+    editForm.name.value = g.name || '';
+    renderBgEdit();
+    editDlg.showModal();
+  }
+  editForm.addEventListener('click', (e) => {
+    const d = e.target.dataset && e.target.dataset.estep;
+    if (!d) return;
+    editCtx.n = Math.min(MAX_BATTLEGROUP_SIZE, Math.max(1, editCtx.n + num(d)));
+    renderBgEdit();
+  });
+  $('#bgedit-cancel').addEventListener('click', () => editDlg.close());
+  editForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const b = B(), g = b.bgs.find((x) => x.id === editCtx.id), s = shipById(g.ship);
+    const start = g.start || g.count, lost = Math.min(start - g.count, editCtx.n);
+    g.name = editForm.name.value.trim();
+    g.start = editCtx.n;
+    g.count = editCtx.n - lost;
+    if (g.count === 0) { g.status = 'dead'; g.dmg = 0; } else if (g.status === 'dead') g.status = 'in';
+    const req = b.ledger.find((x) => x.bg === g.id);
+    if (req) {
+      req.amt = -s.cost * g.start;
+      req.note = 'Requisition ' + (g.name || 'BG ' + g.id) + ': ' + g.start + '× ' + s.name;
+    }
+    editDlg.close();
+    save(); renderBattle();
   });
 
   const ctDlg = $('#contract-dialog');
