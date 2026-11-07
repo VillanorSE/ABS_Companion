@@ -9,8 +9,9 @@ Open the GitHub Pages site on your phone and choose **Add to Home Screen** to in
   - the contracts in play and their full reference cards;
   - round, scale and the opponents in this game (rivals or typed names);
   - the command helm (Seize Initiative / Jump In / Tactical tokens, each with expandable rules);
+  - jump points deployed, lost and destroyed (with the jump point limit), shown in game summaries and campaign stats;
   - credits ledger;
-  - battlegroup requisitions with damage and ship-loss tracking. In an online campaign, damage can be credited to the opponent's battlegroup that dealt it, and **Log attack** records attacks with no damage, hits on contract objects and jump points, or damage to opponents not using the app.
+  - battlegroup requisitions with damage and ship-loss tracking. Tap a battlegroup's damage number to type in an amount and pick its source (an opponent, a weapon malfunction, or a contract). Several Defense Platforms requisitioned together become one battlegroup each. In an online campaign, damage can be credited to the opponent's battlegroup that dealt it, and **Log attack** records attacks with no damage, hits on contract objects and jump points, or damage to opponents not using the app.
 
   Use "Finish game → Log" to record the result. A game's result is its final credits plus "I had the most credits" (ties count), which the app checks once every opponent has logged the game.
 - **Stats**: stat cards for your unlocked ships, or toggle to show all ships.

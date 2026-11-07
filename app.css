@@ -654,3 +654,16 @@ dialog.tall:not([open]){display:none;}
 .status3 .cap .avail.neg{color:var(--bad);}
 .status3 .cap .of{font-size:18px;color:var(--muted);font-weight:700;margin-left:2px;}
 .buynow-switch .buynow-count,#buynow-count{font-weight:400;color:var(--muted);}
+
+/* typed damage amounts */
+.stepper input.amt-in{flex:1;min-width:0;width:100%;font:inherit;font-size:20px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;
+  border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit;padding:4px 0;-moz-appearance:textfield;}
+.stepper input.amt-in::-webkit-outer-spin-button,.stepper input.amt-in::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.trk-l button.dmg-n{font:inherit;color:inherit;background:none;border:0;border-bottom:1px dashed var(--muted);padding:0 2px;cursor:pointer;}
+.trk-l button.dmg-n b{font-weight:800;}
+
+/* jump points */
+.jp-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px;}
+.jp-row .tile{padding:8px;}
+.jp-row .lab{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;text-align:center;}
+.jp-row .stepper.sm button{width:32px;height:32px;font-size:18px;}

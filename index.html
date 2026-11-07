@@ -171,6 +171,10 @@
     <div class="helm" id="b-helm"></div>
     <p class="hint small">Tap a slot’s tokens to spend one. Tap an empty spot to refill it. Tap a name for its full rules. All tokens clear at the start of each round.</p>
 
+    <h2 class="sect">Jump points <span class="rt" id="b-jp-state"></span></h2>
+    <div class="jp-row" id="b-jp"></div>
+    <p class="hint small">Deployed: your jump points brought in (redeploying one doesn’t count). Lost: yours destroyed. Destroyed: opponents’ jump points your fleet destroyed.</p>
+
     <div id="b-uses-wrap" hidden>
       <h2 class="sect">Limited-use advantages</h2>
       <div class="uses" id="b-uses"></div>
@@ -295,6 +299,7 @@
       <div class="stepper"><button type="button" data-rstep="-1" aria-label="Fewer ships">−</button><b id="req-count">1</b><button type="button" data-rstep="1" aria-label="More ships">+</button></div>
     </label>
     <label class="field"><span>Name (optional)</span><input type="text" name="name" placeholder="e.g. Alpha"></label>
+    <p class="hint small" id="req-split" hidden></p>
     <p class="req-cost">Cost: <b id="req-cost">0</b> credits <span id="req-after"></span></p>
     <p class="hint small warn" id="req-warn"></p>
     <div class="dlg-actions">
@@ -354,7 +359,7 @@
   <div class="opp-chips" id="hit-opps"></div>
   <div class="src-list" id="hit-src"></div>
   <div class="amt-row"><span>Damage</span>
-    <div class="stepper sm"><button type="button" data-hn="-1" aria-label="Less damage">−</button><b id="hit-n">1</b><button type="button" data-hn="1" aria-label="More damage">+</button></div></div>
+    <div class="stepper sm"><button type="button" data-hn="-1" aria-label="Less damage">−</button><input type="number" id="hit-n" class="amt-in" inputmode="numeric" min="1" max="30" value="1" aria-label="Damage amount"><button type="button" data-hn="1" aria-label="More damage">+</button></div></div>
   <p class="hint small" id="hit-fresh"></p>
   <div class="dlg-actions"><span class="spacer"></span>
     <button type="button" class="btn" id="hit-cancel">Cancel</button>
@@ -367,7 +372,7 @@
   <p class="hint small">Hits on opponents’ battlegroups are recorded by them when they take the damage.</p>
   <div class="src-list" id="atk-src"></div>
   <div class="amt-row" id="atk-amt" hidden><span>Damage</span>
-    <div class="stepper sm"><button type="button" data-an="-1" aria-label="Less damage">−</button><b id="atk-n">1</b><button type="button" data-an="1" aria-label="More damage">+</button></div></div>
+    <div class="stepper sm"><button type="button" data-an="-1" aria-label="Less damage">−</button><input type="number" id="atk-n" class="amt-in" inputmode="numeric" min="1" max="30" value="1" aria-label="Damage amount"><button type="button" data-an="1" aria-label="More damage">+</button></div></div>
   <div class="dlg-actions"><span class="spacer"></span>
     <button type="button" class="btn" id="atk-cancel">Cancel</button>
     <button type="button" class="btn primary" id="atk-apply">Log</button>

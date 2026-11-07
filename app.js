@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '0.27.1';   // keep in step with VERSION in sw.js
+  const APP_VERSION = '0.28.0';   // keep in step with VERSION in sw.js
   const STORE_KEY = 'abs-companion-v1';
   const PREFS_KEY = 'abs-companion-prefs';
 
@@ -37,8 +37,9 @@
       opps: [],                // opponents in this game: {id: rival corpId} or {name} for someone not in the app
       bid: newId(),            // this battle's id, so opponents' damage records can point at its battlegroups
       oppBids: {},             // corpId -> that opponent's battle id, once seen in their live battle
-      hits: [],                // damage taken: {to, n, r, by, bid, bg, ship, nm} or {to, n, r, src: 'dud'|'other'}
+      hits: [],                // damage taken: {to, n, r, by, bid, bg, ship, nm} or {to, n, r, src: 'dud'|'other'|'opp'} (dud = weapon malfunction)
       atk: [],                 // attacks this fleet logged itself: {bg, r, k: 'miss'|'obj'|'dmg', n, obj}
+      jp: { dep: 0, lost: 0, kill: 0 },   // jump points: mine deployed, mine destroyed, opponents' destroyed
     };
   }
 
@@ -848,13 +849,14 @@
 
   const hitDlg = $('#hit-dialog');
   let hitCtx = null;
-  function openHit(g) {
+  function openHit(g, typing) {
     const opps = liveOpps(), last = B().lastHit || {};
     const opp = opps.find((o) => o.id === last.opp) || opps[0];
     hitCtx = { to: g.id, n: 1, opp: opp ? opp.id : null, src: null };
     if (opp && opp.id === last.opp && opp.live.bgs.some((x) => x[0] === last.bg)) hitCtx.src = 'bg:' + last.bg;
     renderHit();
     hitDlg.showModal();
+    if (typing) { const inp = $('#hit-n'); inp.focus(); inp.select(); }
     refreshLive(120000).then(() => { if (hitDlg.open) renderHit(); });
   }
   function renderHit() {
@@ -865,12 +867,13 @@
     $('#hit-title').innerHTML = 'Damage to ' + bgLabel(g.id, g.name, g.count, g.ship);
     $('#hit-opps').hidden = opps.length < 2;
     $('#hit-opps').innerHTML = opps.map((o) => `<button type="button" class="opp-chip ${o.id === hitCtx.opp ? 'on' : ''}" data-hopp="${esc(o.id)}">${esc(oppName({ id: o.id }))}</button>`).join('');
+    const guests = (B().opps || []).some((o) => !o.id);
     const srcs = (opp ? opp.live.bgs.map(([id, ship, count, name]) => ['bg:' + id, bgLabel(id, name, count, ship)]) : [])
-      .concat([['other', 'Contract or other']])
-      .concat(isCrit(g) ? [['dud', 'Dud while systems critical (own weapon)']] : []);
+      .concat(!opp || guests ? [['opp', 'An opponent <small>not in the app</small>']] : [])
+      .concat([['dud', 'Weapon malfunction <small>own dud while systems critical' + (isCrit(g) ? '' : ' (not critical now)') + '</small>'], ['other', 'Contract or other']]);
     $('#hit-src').innerHTML = (opp ? `<p class="src-h">${esc(oppName({ id: opp.id }))}’s battlegroups in play</p>` : '') +
       srcs.map(([k, label]) => `<button type="button" class="src ${hitCtx.src === k ? 'on' : ''}" data-hsrc="${k}" aria-pressed="${hitCtx.src === k}">${label}</button>`).join('');
-    $('#hit-n').textContent = hitCtx.n;
+    $('#hit-n').value = hitCtx.n;
     $('#hit-fresh').textContent = opp ? 'Their battlegroups as of ' + ago(opp.r.sharedAt) + '. Their phone sends changes about 15 s after they stop tapping.' : '';
     $('#hit-apply').disabled = !hitCtx.src;
   }
@@ -879,17 +882,22 @@
     if (!t) return;
     if (t.dataset.hopp) { hitCtx.opp = t.dataset.hopp; hitCtx.src = null; }
     else if (t.dataset.hsrc) hitCtx.src = t.dataset.hsrc;
-    else if (t.dataset.hn) hitCtx.n = Math.min(30, Math.max(1, hitCtx.n + num(t.dataset.hn)));
+    else if (t.dataset.hn) hitCtx.n = clampAmt(hitCtx.n + num(t.dataset.hn));
     else if (t.id === 'hit-cancel') { hitDlg.close(); return; }
     else if (t.id === 'hit-apply') { applyHit(); return; }
     renderHit();
   });
+  // Typed damage amounts (1-30); the field keeps what's typed and the value is clamped when used.
+  const clampAmt = (v) => Math.min(30, Math.max(1, Math.round(num(v)) || 1));
+  $('#hit-n').addEventListener('input', (e) => { hitCtx.n = clampAmt(e.target.value); });
+  $('#hit-n').addEventListener('change', (e) => { e.target.value = hitCtx.n; });
+  $('#hit-n').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); if (hitCtx.src) applyHit(); } });
   function applyHit() {
     const b = B(), c = hitCtx;
     const g = b.bgs.find((x) => x.id === c.to);
     const before = { count: g.count, dmg: g.dmg, status: g.status, msg: g.msg }, hitsLen = b.hits.length;
     damageBg(g, 1, c.n);
-    let from = c.src === 'dud' ? 'its own dud' : 'a contract or other';
+    let from = c.src === 'dud' ? 'a weapon malfunction' : c.src === 'opp' ? 'an opponent' : 'a contract or other';
     if (c.src.startsWith('bg:')) {
       const o = liveOpps().find((x) => x.id === c.opp);
       const x = o && o.live.bgs.find((y) => y[0] === +c.src.slice(3));
@@ -921,14 +929,14 @@
     $('#atk-title').innerHTML = bgLabel(g.id, g.name, g.count, g.ship) + ' attacked';
     $('#atk-src').innerHTML = opts.map(([k, label]) => `<button type="button" class="src ${atkCtx.k === k ? 'on' : ''}" data-asrc="${esc(k)}" aria-pressed="${atkCtx.k === k}">${label}</button>`).join('');
     $('#atk-amt').hidden = !atkCtx.k || atkCtx.k === 'miss';
-    $('#atk-n').textContent = atkCtx.n;
+    $('#atk-n').value = atkCtx.n;
     $('#atk-apply').disabled = !atkCtx.k;
   }
   atkDlg.addEventListener('click', (e) => {
     const t = e.target.closest('button');
     if (!t) return;
     if (t.dataset.asrc) atkCtx.k = t.dataset.asrc;
-    else if (t.dataset.an) atkCtx.n = Math.min(30, Math.max(1, atkCtx.n + num(t.dataset.an)));
+    else if (t.dataset.an) atkCtx.n = clampAmt(atkCtx.n + num(t.dataset.an));
     else if (t.id === 'atk-cancel') { atkDlg.close(); return; }
     else if (t.id === 'atk-apply') {
       const b = B(), g = b.bgs.find((x) => x.id === atkCtx.bg), k = atkCtx.k;
@@ -943,6 +951,10 @@
     }
     renderAtk();
   });
+
+  $('#atk-n').addEventListener('input', (e) => { atkCtx.n = clampAmt(e.target.value); });
+  $('#atk-n').addEventListener('change', (e) => { e.target.value = atkCtx.n; });
+  $('#atk-n').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
 
   function renderBattle() {
     const b = B();
@@ -1036,7 +1048,7 @@
               <div class="stepper sm"><button type="button" data-bgships="${g.id}" data-d="-1" aria-label="Lose a ship">−</button><button type="button" data-bgships="${g.id}" data-d="1" aria-label="Restore a ship">+</button></div></div>
           </div>
           <div class="trk">
-            <span class="trk-l">Damage <b>${dmg}</b>/${sil}${crit ? ' <em class="crit">Systems critical</em>' : ''}</span>
+            <span class="trk-l">Damage ${g.count > 0 ? `<button type="button" class="dmg-n" data-bgdmgn="${g.id}" aria-label="Enter damage taken"><b>${dmg}</b>/${sil}</button>` : `<b>${dmg}</b>/${sil}`}${crit ? ' <em class="crit">Systems critical</em>' : ''}</span>
             <div class="trk-row"><div class="dmgbar"><span style="width:${Math.min(100, (dmg / sil) * 100)}%"></span></div>
               <div class="stepper sm"><button type="button" data-bgdmg="${g.id}" data-d="-1" aria-label="Remove damage">−</button><button type="button" data-bgdmg="${g.id}" data-d="1" aria-label="Add damage">+</button></div></div>
           </div>
@@ -1052,6 +1064,13 @@
     const picked = (b.contracts || []).map((id) => CONTRACTS.find((c) => c.id === id)).filter(Boolean);
     const tables = 1 + picked.filter((c) => c.extraTable).length;
     $('#b-tables').textContent = picked.length ? tables + ' table' + (tables > 1 ? 's' : '') + ' · jump point limit ' + (tables + 1) : '';
+    const jp = b.jp = b.jp || { dep: 0, lost: 0, kill: 0 };
+    const jpIn = jp.dep - jp.lost, jpMax = tables + 1;
+    const jpState = $('#b-jp-state');
+    jpState.textContent = jpIn + ' in play · limit ' + jpMax;
+    jpState.classList.toggle('warn', jpIn > jpMax);
+    $('#b-jp').innerHTML = [['dep', 'Deployed'], ['lost', 'Lost'], ['kill', 'Destroyed']].map(([k, label]) => `<div class="tile"><span class="lab">${label}</span>
+      <div class="stepper sm"><button type="button" data-jp="${k}" data-d="-1" aria-label="${label}: one fewer">−</button><b>${jp[k] || 0}</b><button type="button" data-jp="${k}" data-d="1" aria-label="${label}: one more">+</button></div></div>`).join('');
     const exN = exhaustedCount();
     $('#b-endwarn').hidden = exN < 2;
     $('#b-ceos').textContent = ceos();
@@ -1158,6 +1177,12 @@
       // Ask who did it only when there's a choice to make: a live opponent, or a dud while systems critical.
       if (num(t.dataset.d) > 0 && g.count > 0 && (liveOpps().length || isCrit(g))) { openHit(g); return; }
       damageBg(g, num(t.dataset.d));
+    } else if (t.dataset.bgdmgn) {
+      openHit(b.bgs.find((x) => x.id === +t.dataset.bgdmgn), true); return;
+    } else if (t.dataset.jp) {
+      b.jp = b.jp || { dep: 0, lost: 0, kill: 0 };
+      b.jp[t.dataset.jp] = Math.max(0, (b.jp[t.dataset.jp] || 0) + num(t.dataset.d));
+      if (b.jp.lost > b.jp.dep) b.jp.dep = b.jp.lost;
     } else if (t.dataset.bgatk) {
       openAtk(b.bgs.find((x) => x.id === +t.dataset.bgatk)); return;
     } else if (t.dataset.bgundo) {
@@ -1233,6 +1258,8 @@
   });
 
   // requisition dialog
+  // Ship classes requisitioned together but placed as separate battlegroups.
+  const SPLIT_SHIPS = new Set(['ship_10']);   // Defense Platform
   const reqDlg = $('#req-dialog');
   const reqForm = $('#req-form');
   let reqCount = 1;
@@ -1242,6 +1269,9 @@
     $('#req-count').textContent = reqCount;
     $('#req-cost').textContent = cost;
     $('#req-after').textContent = '(credits after: ' + signed(battleCredits() - cost) + ')';
+    const split = $('#req-split');
+    split.hidden = !(SPLIT_SHIPS.has(s.id) && reqCount > 1);
+    split.textContent = 'Each ' + s.name + ' becomes its own battlegroup once placed (' + reqCount + ' battlegroups).';
     const uc = utilityCheck(s, reqCount);
     $('#req-warn').textContent = uc.over ? 'Over the utility ship limit: ' + uc.utes + ' of ' + uc.limit + ' allowed in play.' : '';
   }
@@ -1264,11 +1294,18 @@
     e.preventDefault();
     const b = B();
     const s = shipById(reqForm.ship.value);
-    const id = b.nextBg++;
-    const name = reqForm.name.value.trim();
-    b.bgs.push({ id, ship: s.id, count: reqCount, start: reqCount, dmg: 0, round: b.round, name, status: 'in' });
+    const base = reqForm.name.value.trim();
     reqDlg.close();
-    addLedger(-s.cost * reqCount, 'Requisition ' + (name || 'BG ' + id) + ': ' + reqCount + '× ' + s.name, id);
+    // Several Defense Platforms make one battlegroup per platform, each with its own ledger line.
+    const groups = SPLIT_SHIPS.has(s.id) ? Array(reqCount).fill(1) : [reqCount];
+    groups.forEach((count, i) => {
+      const id = b.nextBg++;
+      const name = base && groups.length > 1 ? base + ' ' + (i + 1) : base;
+      b.bgs.push({ id, ship: s.id, count, start: count, dmg: 0, round: b.round, name, status: 'in' });
+      b.ledger.push({ round: b.round, amt: -s.cost * count, note: 'Requisition ' + (name || 'BG ' + id) + ': ' + count + '× ' + s.name, bg: id });
+    });
+    save(); renderBattle();
+
   });
 
   const ctDlg = $('#contract-dialog');
@@ -1356,6 +1393,7 @@
       earned: rounds.reduce((t, r) => t + r.earned, 0), spent: rounds.reduce((t, r) => t + r.spent, 0),
       byRound: rounds, fleet, contracts: (b.contracts || []).slice(),
       bid: battleId(), oppBids: Object.assign({}, b.oppBids), hits: (b.hits || []).slice(), atk: (b.atk || []).slice(),
+      jp: Object.assign({ dep: 0, lost: 0, kill: 0 }, b.jp),
     };
   }
 
@@ -1429,7 +1467,8 @@
           return `<tr><td>${esc(g.name)} · ${esc(g.ship)}</td><td>${g.round}</td><td>${uCell(g.cost, g.count)}</td>
             <td class="${g.lost ? 'neg' : ''}">${uCell(g.lost * each, g.lost)}</td>${st ? dealtCell(k) + attacksCell(k) : ''}</tr>`;
         }).join('')}</tbody></table>
-        ${duds.length ? `<p class="hint small">Duds while systems critical: ${duds.map(esc).join(', ')}.</p>` : ''}` : ''}
+        ${duds.length ? `<p class="hint small">Weapon malfunction damage: ${duds.map(esc).join(', ')}.</p>` : ''}` : ''}
+      ${s.jp && (s.jp.dep || s.jp.lost || s.jp.kill) ? `<p class="sum-contracts">Jump points: ${s.jp.dep} deployed · ${s.jp.lost} lost · ${s.jp.kill} destroyed</p>` : ''}
     </div>`;
   }
   $('#btn-discard').addEventListener('click', () => {
@@ -1834,6 +1873,9 @@
     });
     const classes = Object.entries(byClass).sort((a, b) => b[1].bought - a[1].bought);
     const summarized = games.filter((g) => g.summary).length;
+    // Jump points, from games played with jump point tracking.
+    const jpGames = games.filter((g) => g.summary && g.summary.jp);
+    const jpT = jpGames.reduce((t, g) => { ['dep', 'lost', 'kill'].forEach((k) => { t[k] += g.summary.jp[k] || 0; }); return t; }, { dep: 0, lost: 0, kill: 0 });
 
     box.innerHTML = `
       <div class="sum-tiles stats4">
@@ -1854,6 +1896,9 @@
         <b class="${p.cr > 0 ? 'pos' : p.cr < 0 ? 'neg' : ''}">${p.hasCr ? signed(p.cr) : '–'}</b><small>G${p.n}</small></div>`).join('')}</div>
       <h4>Reputation over the campaign</h4>
       <div class="repline">${per.map((p) => `<span><b>${p.rep}</b><small>G${p.n}</small></span>`).join('<i>›</i>')}</div>
+      ${jpGames.length ? `<h4>Jump points (${jpGames.length} game${jpGames.length === 1 ? '' : 's'} tracked)</h4>
+      <div class="sum-tiles"><div><b>${jpT.dep}</b><span>Deployed</span></div><div><b class="${jpT.lost ? 'neg' : ''}">${jpT.lost}</b><span>Lost</span></div>
+        <div><b class="${jpT.kill ? 'pos' : ''}">${jpT.kill}</b><span>Destroyed</span></div></div>` : ''}
       ${classes.length ? `<h4>Ships requisitioned (${summarized} game${summarized === 1 ? '' : 's'} with summaries)</h4>
         <table class="ctab unit-tbl ${unitCls()}"><thead><tr><th>Class</th><th>${uHead('Bought', 'Bought')}</th><th>${uHead('Lost', 'Lost')}</th>
           ${tracked ? '<th>Dealt</th><th>Per 10 cr</th><th>Attacks</th>' : ''}</tr></thead><tbody>
